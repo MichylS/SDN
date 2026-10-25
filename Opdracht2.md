@@ -44,9 +44,13 @@ Acties
 Verdeling over tabellen
 Oplevering:
 Werkende Mininet-topologie met Faucet-configuraties
+
 Een portfolio waarin je uitlegt:
+
 Hoe je netwerk is opgebouwd
 Welke keuzes je hebt gemaakt en waarom
 Hoe je segmentatie en NFV hebt geïmplementeerd
 Screenshots of dumps van flow tables (via dpctl dump-flows of vergelijkbaar)
+
+
 Diagram of schematische netwerktekening

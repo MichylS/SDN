@@ -3,106 +3,186 @@ meters:
     guest-rate-limit:
         meter_id: 1
         entry:
-            flags:
-                - KBPS
-                - BURST
-                - STATS
+            flags: [KBPS, BURST, STATS]
             bands:
                 - type: DROP
                   rate: 1000
                   burst_size: 100
 
 acls:
-    guest-rate-limit-acl:
+    # Employee: nooit naar guest of management, wel naar de rest.
+    office-acl:
         - rule:
-              description: "Limit guest traffic to 1 Mbit/s"
+              description: "Employee -> guest verboden (IPv4)"
+              dl_type: 0x800
+              ipv4_dst: "10.0.200.0/24"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Employee -> guest verboden (IPv6)"
+              dl_type: 0x86dd
+              ipv6_dst: "2001:db8:200::/64"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Rest toegestaan"
+              actions:
+                  allow: 1
+
+    # Guest: alleen naar de gateway (natgw) en dus naar de ISP. 1 Mbit/s per poort.
+    guest-acl:
+        - rule:
+              description: "ARP toestaan"
+              dl_type: 0x806
+              actions:
+                  allow: 1
+        - rule:
+              description: "IPv6 neighbour solicitation"
+              dl_type: 0x86dd
+              ip_proto: 58
+              icmpv6_type: 135
+              actions:
+                  allow: 1
+        - rule:
+              description: "IPv6 neighbour advertisement"
+              dl_type: 0x86dd
+              ip_proto: 58
+              icmpv6_type: 136
+              actions:
+                  allow: 1
+        - rule:
+              description: "Guest -> eigen gateway IPv4"
+              dl_type: 0x800
+              eth_dst: "02:00:00:00:fe:01"
+              ipv4_dst: "10.0.200.254/32"
               actions:
                   meter: guest-rate-limit
                   allow: 1
+        - rule:
+              description: "Guest -> guest verboden (IPv4)"
+              dl_type: 0x800
+              ipv4_dst: "10.0.200.0/24"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> employee verboden (IPv4)"
+              dl_type: 0x800
+              ipv4_dst: "10.0.100.0/23"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> management verboden (IPv4)"
+              dl_type: 0x800
+              ipv4_dst: "10.0.30.0/24"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> ISP via gateway (IPv4), rate limited"
+              dl_type: 0x800
+              eth_dst: "02:00:00:00:fe:01"
+              actions:
+                  meter: guest-rate-limit
+                  allow: 1
+        - rule:
+              description: "Guest -> eigen gateway IPv6"
+              dl_type: 0x86dd
+              eth_dst: "02:00:00:00:fe:01"
+              ipv6_dst: "2001:db8:200::1/128"
+              actions:
+                  meter: guest-rate-limit
+                  allow: 1
+        - rule:
+              description: "Guest -> guest verboden (IPv6)"
+              dl_type: 0x86dd
+              ipv6_dst: "2001:db8:200::/64"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> employee verboden (IPv6)"
+              dl_type: 0x86dd
+              ipv6_dst: "2001:db8:100::/64"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> management verboden (IPv6)"
+              dl_type: 0x86dd
+              ipv6_dst: "2001:db8:300::/64"
+              actions:
+                  allow: 0
+        - rule:
+              description: "Guest -> ISP via gateway (IPv6), rate limited"
+              dl_type: 0x86dd
+              eth_dst: "02:00:00:00:fe:01"
+              actions:
+                  meter: guest-rate-limit
+                  allow: 1
+        - rule:
+              description: "Al het andere droppen"
+              actions:
+                  allow: 0
 
+    # Ethernet port security voor management: een vast MAC per poort.
     port-security-a1-mgt:
         - rule:
-              description: "Allow only a1_mgt"
+              description: "Alleen a1_mgt"
               eth_src: "02:00:00:00:30:11"
               actions:
                   allow: 1
         - rule:
-              description: "Drop all other MAC addresses"
+              description: "Overige MAC-adressen droppen"
               actions:
                   allow: 0
-
     port-security-a2-mgt:
         - rule:
-              description: "Allow only a2_mgt"
+              description: "Alleen a2_mgt"
               eth_src: "02:00:00:00:30:12"
               actions:
                   allow: 1
         - rule:
-              description: "Drop all other MAC addresses"
+              description: "Overige MAC-adressen droppen"
               actions:
                   allow: 0
-
     port-security-b1-mgt:
         - rule:
-              description: "Allow only b1_mgt"
+              description: "Alleen b1_mgt"
               eth_src: "02:00:00:00:30:21"
               actions:
                   allow: 1
         - rule:
-              description: "Drop all other MAC addresses"
+              description: "Overige MAC-adressen droppen"
               actions:
                   allow: 0
-
     port-security-b2-mgt:
         - rule:
-              description: "Allow only b2_mgt"
+              description: "Alleen b2_mgt"
               eth_src: "02:00:00:00:30:22"
               actions:
                   allow: 1
         - rule:
-              description: "Drop all other MAC addresses"
+              description: "Overige MAC-adressen droppen"
               actions:
                   allow: 0
-
     port-security-b3-mgt:
         - rule:
-              description: "Allow only b3_mgt"
+              description: "Alleen b3_mgt"
               eth_src: "02:00:00:00:30:23"
               actions:
                   allow: 1
         - rule:
-              description: "Drop all other MAC addresses"
+              description: "Overige MAC-adressen droppen"
               actions:
                   allow: 0
 
 vlans:
     office:
         vid: 100
-        description: "Private employee network for up to 510 hosts"
-        faucet_vips:
-            - "10.0.100.254/23"
-            - "2001:100::1/64"
-
+        description: "Employee network 10.0.100.0/23 en 2001:db8:100::/64"
     guest:
         vid: 200
-        description: "Private guest network"
-        faucet_vips:
-            - "10.0.200.254/24"
-            - "2001:200::1/64"
-
+        description: "Guest network 10.0.200.0/24 en 2001:db8:200::/64"
     management:
         vid: 300
-        description: "Private management network"
-        faucet_vips:
-            - "10.0.30.254/24"
-            - "2001:300::1/64"
-
-routers:
-    router-all-vlans:
-        vlans:
-            - office
-            - guest
-            - management
+        description: "Management network 10.0.30.0/24 en 2001:db8:300::/64"
 
 dps:
     a_core:
@@ -110,173 +190,131 @@ dps:
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to a_f1"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar a_f1"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Trunk to a_f2"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar a_f2"
+                tagged_vlans: [office, guest, management]
             3:
-                description: "Darkfiber trunk to b_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Darkfiber naar b_core"
+                tagged_vlans: [office, guest, management]
             4:
-                description: "Reserved ISP/public /28 edge uplink"
+                description: "Trunk naar natgw (router, NAT en stateful firewall)"
+                tagged_vlans: [office, guest, management]
 
     a_f1:
         dp_id: 0x2
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to a_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar a_core"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Employee host"
+                description: "Employee a1_emp"
                 native_vlan: office
+                acls_in: [office-acl]
             3:
-                description: "Guest host"
+                description: "Guest a1_gst"
                 native_vlan: guest
-                acls_in:
-                    - guest-rate-limit-acl
+                acls_in: [guest-acl]
             4:
-                description: "a1_mgt management host"
+                description: "Management a1_mgt"
                 native_vlan: management
-                acls_in:
-                    - port-security-a1-mgt
+                acls_in: [port-security-a1-mgt]
 
     a_f2:
         dp_id: 0x3
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to a_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar a_core"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Employee host"
+                description: "Employee a2_emp"
                 native_vlan: office
+                acls_in: [office-acl]
             3:
-                description: "Guest host"
+                description: "Guest a2_gst"
                 native_vlan: guest
-                acls_in:
-                    - guest-rate-limit-acl
+                acls_in: [guest-acl]
             4:
-                description: "a2_mgt management host"
+                description: "Management a2_mgt"
                 native_vlan: management
-                acls_in:
-                    - port-security-a2-mgt
+                acls_in: [port-security-a2-mgt]
 
     b_core:
         dp_id: 0x4
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to b_f1"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_f1"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Trunk to b_f2"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_f2"
+                tagged_vlans: [office, guest, management]
             3:
-                description: "Trunk to b_f3"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_f3"
+                tagged_vlans: [office, guest, management]
             4:
-                description: "Darkfiber trunk to a_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
-            5:
-                description: "Reserved ISP/public /28 edge uplink"
+                description: "Darkfiber naar a_core"
+                tagged_vlans: [office, guest, management]
 
     b_f1:
         dp_id: 0x5
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to b_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_core"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Employee host"
+                description: "Employee b1_emp"
                 native_vlan: office
+                acls_in: [office-acl]
             3:
-                description: "Guest host"
+                description: "Guest b1_gst"
                 native_vlan: guest
-                acls_in:
-                    - guest-rate-limit-acl
+                acls_in: [guest-acl]
             4:
-                description: "b1_mgt management host"
+                description: "Management b1_mgt"
                 native_vlan: management
-                acls_in:
-                    - port-security-b1-mgt
+                acls_in: [port-security-b1-mgt]
 
     b_f2:
         dp_id: 0x6
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to b_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_core"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Employee host"
+                description: "Employee b2_emp"
                 native_vlan: office
+                acls_in: [office-acl]
             3:
-                description: "Guest host"
+                description: "Guest b2_gst"
                 native_vlan: guest
-                acls_in:
-                    - guest-rate-limit-acl
+                acls_in: [guest-acl]
             4:
-                description: "b2_mgt management host"
+                description: "Management b2_mgt"
                 native_vlan: management
-                acls_in:
-                    - port-security-b2-mgt
+                acls_in: [port-security-b2-mgt]
 
     b_f3:
         dp_id: 0x7
         hardware: "Open vSwitch"
         interfaces:
             1:
-                description: "Trunk to b_core"
-                tagged_vlans:
-                    - office
-                    - guest
-                    - management
+                description: "Trunk naar b_core"
+                tagged_vlans: [office, guest, management]
             2:
-                description: "Employee host"
+                description: "Employee b3_emp"
                 native_vlan: office
+                acls_in: [office-acl]
             3:
-                description: "Guest host"
+                description: "Guest b3_gst"
                 native_vlan: guest
-                acls_in:
-                    - guest-rate-limit-acl
+                acls_in: [guest-acl]
             4:
-                description: "b3_mgt management host"
+                description: "Management b3_mgt"
                 native_vlan: management
-                acls_in:
-                    - port-security-b3-mgt
+                acls_in: [port-security-b3-mgt]

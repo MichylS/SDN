@@ -46,6 +46,8 @@ Mininet-omgeving met aangepaste topologie en flowregels
 Er moeten minimaal 500 concurrent users naar de isp kunnen pingen (NAT)
 Heldere uitleg en verantwoording van ontwerpkeuzes
 Oplevering:
+
+
 Werkend prototype in Mininet
 YAML-configuraties voor Faucet + eventuele extra componenten (bijv. ACLs of policy rules)
 Uitlegdocument met:

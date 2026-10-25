@@ -1,0 +1,39 @@
+mkdir -p ~/sdn-opdracht2/tests
+cat > ~/sdn-opdracht2/tests/scale_test.sh <<'SCRIPT'
+#!/bin/bash
+# Gebruik: scale_test.sh [aantal] [interface] [doel] [seconden]
+COUNT=${1:-500}
+IFACE=${2:-a1_emp-eth0}
+TARGET=${3:-198.51.100.1}
+SECONDS_RUN=${4:-20}
+DIR=/tmp/scale
+rm -rf "$DIR"; mkdir -p "$DIR"
+
+python3 -c '
+import ipaddress, sys
+count = int(sys.argv[1])
+skip = {"10.0.100.11", "10.0.100.12", "10.0.100.21",
+        "10.0.100.22", "10.0.100.23", "10.0.100.254"}
+net = ipaddress.ip_network("10.0.100.0/23")
+ips = [str(h) for h in net.hosts() if str(h) not in skip][:count]
+print("\n".join(ips))
+' "$COUNT" > "$DIR/ips.txt"
+
+while read -r ip; do
+    ip addr add "$ip/23" dev "$IFACE"
+done < "$DIR/ips.txt"
+
+echo "Aliassen toegevoegd: $(wc -l < "$DIR/ips.txt")"
+while read -r ip; do
+    ping -c "$SECONDS_RUN" -i 1 -q -I "$ip" "$TARGET" > "$DIR/ping_$ip.txt" 2>&1 &
+done < "$DIR/ips.txt"
+wait
+
+OK=$(grep -l ' 0% packet loss' "$DIR"/ping_*.txt | wc -l)
+echo "Gebruikers met 0% verlies: $OK van $COUNT"
+
+while read -r ip; do
+    ip addr del "$ip/23" dev "$IFACE"
+done < "$DIR/ips.txt"
+SCRIPT
+chmod +x ~/sdn-opdracht2/tests/scale_test.sh
