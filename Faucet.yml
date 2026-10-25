@@ -1,0 +1,282 @@
+---
+meters:
+    guest-rate-limit:
+        meter_id: 1
+        entry:
+            flags:
+                - KBPS
+                - BURST
+                - STATS
+            bands:
+                - type: DROP
+                  rate: 1000
+                  burst_size: 100
+
+acls:
+    guest-rate-limit-acl:
+        - rule:
+              description: "Limit guest traffic to 1 Mbit/s"
+              actions:
+                  meter: guest-rate-limit
+                  allow: 1
+
+    port-security-a1-mgt:
+        - rule:
+              description: "Allow only a1_mgt"
+              eth_src: "02:00:00:00:30:11"
+              actions:
+                  allow: 1
+        - rule:
+              description: "Drop all other MAC addresses"
+              actions:
+                  allow: 0
+
+    port-security-a2-mgt:
+        - rule:
+              description: "Allow only a2_mgt"
+              eth_src: "02:00:00:00:30:12"
+              actions:
+                  allow: 1
+        - rule:
+              description: "Drop all other MAC addresses"
+              actions:
+                  allow: 0
+
+    port-security-b1-mgt:
+        - rule:
+              description: "Allow only b1_mgt"
+              eth_src: "02:00:00:00:30:21"
+              actions:
+                  allow: 1
+        - rule:
+              description: "Drop all other MAC addresses"
+              actions:
+                  allow: 0
+
+    port-security-b2-mgt:
+        - rule:
+              description: "Allow only b2_mgt"
+              eth_src: "02:00:00:00:30:22"
+              actions:
+                  allow: 1
+        - rule:
+              description: "Drop all other MAC addresses"
+              actions:
+                  allow: 0
+
+    port-security-b3-mgt:
+        - rule:
+              description: "Allow only b3_mgt"
+              eth_src: "02:00:00:00:30:23"
+              actions:
+                  allow: 1
+        - rule:
+              description: "Drop all other MAC addresses"
+              actions:
+                  allow: 0
+
+vlans:
+    office:
+        vid: 100
+        description: "Private employee network for up to 510 hosts"
+        faucet_vips:
+            - "10.0.100.254/23"
+            - "2001:100::1/64"
+
+    guest:
+        vid: 200
+        description: "Private guest network"
+        faucet_vips:
+            - "10.0.200.254/24"
+            - "2001:200::1/64"
+
+    management:
+        vid: 300
+        description: "Private management network"
+        faucet_vips:
+            - "10.0.30.254/24"
+            - "2001:300::1/64"
+
+routers:
+    router-all-vlans:
+        vlans:
+            - office
+            - guest
+            - management
+
+dps:
+    a_core:
+        dp_id: 0x1
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to a_f1"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Trunk to a_f2"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            3:
+                description: "Darkfiber trunk to b_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            4:
+                description: "Reserved ISP/public /28 edge uplink"
+
+    a_f1:
+        dp_id: 0x2
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to a_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Employee host"
+                native_vlan: office
+            3:
+                description: "Guest host"
+                native_vlan: guest
+                acls_in:
+                    - guest-rate-limit-acl
+            4:
+                description: "a1_mgt management host"
+                native_vlan: management
+                acls_in:
+                    - port-security-a1-mgt
+
+    a_f2:
+        dp_id: 0x3
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to a_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Employee host"
+                native_vlan: office
+            3:
+                description: "Guest host"
+                native_vlan: guest
+                acls_in:
+                    - guest-rate-limit-acl
+            4:
+                description: "a2_mgt management host"
+                native_vlan: management
+                acls_in:
+                    - port-security-a2-mgt
+
+    b_core:
+        dp_id: 0x4
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to b_f1"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Trunk to b_f2"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            3:
+                description: "Trunk to b_f3"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            4:
+                description: "Darkfiber trunk to a_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            5:
+                description: "Reserved ISP/public /28 edge uplink"
+
+    b_f1:
+        dp_id: 0x5
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to b_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Employee host"
+                native_vlan: office
+            3:
+                description: "Guest host"
+                native_vlan: guest
+                acls_in:
+                    - guest-rate-limit-acl
+            4:
+                description: "b1_mgt management host"
+                native_vlan: management
+                acls_in:
+                    - port-security-b1-mgt
+
+    b_f2:
+        dp_id: 0x6
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to b_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Employee host"
+                native_vlan: office
+            3:
+                description: "Guest host"
+                native_vlan: guest
+                acls_in:
+                    - guest-rate-limit-acl
+            4:
+                description: "b2_mgt management host"
+                native_vlan: management
+                acls_in:
+                    - port-security-b2-mgt
+
+    b_f3:
+        dp_id: 0x7
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Trunk to b_core"
+                tagged_vlans:
+                    - office
+                    - guest
+                    - management
+            2:
+                description: "Employee host"
+                native_vlan: office
+            3:
+                description: "Guest host"
+                native_vlan: guest
+                acls_in:
+                    - guest-rate-limit-acl
+            4:
+                description: "b3_mgt management host"
+                native_vlan: management
+                acls_in:
+                    - port-security-b3-mgt
