@@ -253,4 +253,3 @@ if __name__ == "__main__":
 
     setLogLevel("info")
     run_topology(args.controller_ip)
-mininet@mininet-vm:~/sdn-opdracht2/topology$ 

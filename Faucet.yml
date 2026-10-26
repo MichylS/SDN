@@ -1,5 +1,10 @@
 ---
+# Faucet-configuratie voor drie gescheiden netwerken:
+# employee (kantoor), guest (bezoekers) en management.
+# De VLAN's worden door de core- en verdiepingsswitches getagd
+# doorgestuurd naar de router/gateway.
 meters:
+    # Guest-verkeer wordt per switchpoort beperkt tot 1 Mbit/s.
     guest-rate-limit:
         meter_id: 1
         entry:
@@ -10,7 +15,9 @@ meters:
                   burst_size: 100
 
 acls:
-    # Employee: nooit naar guest of management, wel naar de rest.
+    # ACL's worden toegepast op inkomend verkeer van eindhosts.
+    # Employee mag op switchniveau niet rechtstreeks naar guest.
+    # Overige toegangsbeperkingen worden op de gateway afgehandeld.
     office-acl:
         - rule:
               description: "Employee -> guest verboden (IPv4)"
@@ -29,7 +36,8 @@ acls:
               actions:
                   allow: 1
 
-    # Guest: alleen naar de gateway (natgw) en dus naar de ISP. 1 Mbit/s per poort.
+    # Guest mag alleen via de gateway naar buiten en krijgt 1 Mbit/s
+    # per poort. Verkeer naar interne netwerken wordt expliciet geweigerd.
     guest-acl:
         - rule:
               description: "ARP toestaan"
@@ -121,7 +129,8 @@ acls:
               actions:
                   allow: 0
 
-    # Ethernet port security voor management: een vast MAC per poort.
+    # Ethernet-port security voor management:
+    # elke managementpoort accepteert slechts één vaste bron-MAC.
     port-security-a1-mgt:
         - rule:
               description: "Alleen a1_mgt"
@@ -174,6 +183,8 @@ acls:
                   allow: 0
 
 vlans:
+    # Native VLAN's worden gebruikt op accesspoorten; op trunks zijn
+    # dezelfde VLAN's als tagged VLAN toegestaan.
     office:
         vid: 100
         description: "Employee network 10.0.100.0/23 en 2001:db8:100::/64"
@@ -185,6 +196,9 @@ vlans:
         description: "Management network 10.0.30.0/24 en 2001:db8:300::/64"
 
 dps:
+    # Elke datapath switch (DP) gebruikt een uniek datapath-ID.
+    # Core-switches verbinden verdiepingen en de gateway; verdiepings-
+    # switches verbinden de eindhosts met accesspoorten.
     a_core:
         dp_id: 0x1
         hardware: "Open vSwitch"

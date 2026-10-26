@@ -43,8 +43,6 @@ Eén gedeelde uplink op a_core	Eén publiek /28 betekent één NAT-punt. Een twe
 
 isp_net zonder controller	Het ISP-segment hoort niet bij het campusnetwerk. Een gewone bridge simuleert de ISP-kant zonder Faucet-configuratie
 
-
-
 * Hoe je segmentatie en NFV hebt geïmplementeerd
 
 Hoe ik segmentatie en NFV heb geïmplementeerd
@@ -109,13 +107,10 @@ Beperking: de 500 bronadressen komen van één host met één MAC. De test bewij
 * Screenshots of dumps van flow tables (via dpctl dump-flows of vergelijkbaar)
 ![alt text](image-1.png)
 
-
-
 * Diagram of schematische netwerktekening
 ![miroshets](image.png)
 
 commands voor flows
-
 text
 a1_gst ping -c3 198.51.100.1
 a1_gst ping -c3 -W1 10.0.200.12

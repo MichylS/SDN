@@ -37,3 +37,12 @@ while read -r ip; do
 done < "$DIR/ips.txt"
 SCRIPT
 chmod +x ~/sdn-opdracht2/tests/scale_test.sh
+
+# om uit te voeren 
+# a1_emp bash /home/mininet/sdn-opdracht2/tests/scale_test.sh 500 a1_emp-eth0 198.51.100.1 20 > /tmp/scale_summary.txt 2>&1 &
+#meten
+#natgw conntrack -C
+#natgw conntrack -L | grep -c 198.51.100.2
+#natgw iptables -t nat -L POSTROUTING -n -v
+#sh cat /tmp/scale_summary.txt
+#sudo python3 ~/sdn-opdracht2/topology/buildings_topology.py --controller-ip 10.24.20.8
