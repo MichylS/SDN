@@ -1,0 +1,24 @@
+klaar na 3.3 s
+--- STAP 1: met firewall
+   employee -> management       a1_emp -> 10.0.30.11   geblokkeerd
+   guest -> guest               a1_gst -> 10.0.200.12  geblokkeerd
+   guest -> employee            a2_gst -> 10.0.100.11  geblokkeerd
+   management -> employee       a1_mgt -> 10.0.100.21  werkt
+   employee -> internet (NAT)   a1_emp -> 8.8.8.8      werkt
+   guest -> internet (NAT)      b3_gst -> 8.8.8.8      werkt
+na reload: a1_emp -> a1_mgt werkt na 1.0 s
+--- STAP 2: zonder firewall (zelfde netwerk, niet herstart)
+   employee -> management       a1_emp -> 10.0.30.11   werkt
+   guest -> guest               a1_gst -> 10.0.200.12  werkt
+   guest -> employee            a2_gst -> 10.0.100.11  werkt
+   management -> employee       a1_mgt -> 10.0.100.21  werkt
+   employee -> internet (NAT)   a1_emp -> 8.8.8.8      werkt
+   guest -> internet (NAT)      b3_gst -> 8.8.8.8      werkt
+na reload: a1_emp -> a1_mgt geblokkeerd na 1.0 s
+--- STAP 3: firewall weer aan
+   employee -> management       a1_emp -> 10.0.30.11   geblokkeerd
+   guest -> guest               a1_gst -> 10.0.200.12  geblokkeerd
+   guest -> employee            a2_gst -> 10.0.100.11  geblokkeerd
+   management -> employee       a1_mgt -> 10.0.100.21  werkt
+   employee -> internet (NAT)   a1_emp -> 8.8.8.8      werkt
+   guest -> internet (NAT)      b3_gst -> 8.8.8.8      werkt

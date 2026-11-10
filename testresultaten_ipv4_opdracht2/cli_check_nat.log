@@ -1,0 +1,41 @@
+mininet> PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=62 time=1.44 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=62 time=0.466 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=62 time=0.159 ms
+
+--- 8.8.8.8 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2010ms
+rtt min/avg/max/mdev = 0.159/0.688/1.439/0.545 ms
+mininet> PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=62 time=1.12 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=62 time=0.409 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=62 time=0.091 ms
+
+--- 8.8.8.8 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2013ms
+rtt min/avg/max/mdev = 0.091/0.538/1.116/0.428 ms
+mininet> default via 203.0.113.2 dev isp_a-eth1 
+198.51.100.0/29 dev isp_a-eth0 proto kernel scope link src 198.51.100.1 
+198.51.100.8/29 via 198.51.100.2 dev isp_a-eth0 
+203.0.113.0/30 dev isp_a-eth1 proto kernel scope link src 203.0.113.1 
+mininet> -P POSTROUTING ACCEPT
+mininet> PING 10.0.100.11 (10.0.100.11) 56(84) bytes of data.
+
+--- 10.0.100.11 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 1009ms
+
+mininet> tcp,orig=(src=10.0.200.22,dst=8.8.8.8,sport=39592,dport=8000),reply=(src=8.8.8.8,dst=198.51.100.9,sport=8000,dport=39592),zone=10,protoinfo=(state=TIME_WAIT)
+icmp,orig=(src=10.0.100.11,dst=8.8.8.8,id=31974,type=8,code=0),reply=(src=8.8.8.8,dst=198.51.100.9,id=31974,type=0,code=0),zone=10
+icmp,orig=(src=10.0.200.22,dst=8.8.8.8,id=31976,type=8,code=0),reply=(src=8.8.8.8,dst=198.51.100.9,id=31976,type=0,code=0),zone=10
+tcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46378,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46378),zone=10,protoinfo=(state=TIME_WAIT)
+mininet> *** Stopping network
+*** Stopping 1 controllers
+faucet 
+*** Stopping 25 links
+.........................
+*** Stopping 7 switches
+a_core a_f1 a_f2 b_core b_f1 b_f2 b_f3 
+*** Stopping 18 hosts
+a1_emp a1_gst a1_mgt a2_emp a2_gst a2_mgt b1_emp b1_gst b1_mgt b2_emp b2_gst b2_mgt b3_emp b3_gst b3_mgt internet isp_a isp_b 
+*** Done
+0

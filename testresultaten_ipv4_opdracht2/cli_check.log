@@ -1,0 +1,27 @@
+a_core a_f1 a_f2 b_core b_f1 b_f2 b_f3 ...
+*** Waiting for switches to connect to Faucet
+*** Configuring hosts, ISP routers and internet
+*** Network ready
+*** Starting CLI:
+mininet> mininet> PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=62 time=0.949 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=62 time=0.499 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=62 time=0.256 ms
+--- 8.8.8.8 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2033ms
+rtt min/avg/max/mdev = 0.256/0.568/0.949/0.287 ms
+mininet> PING 10.0.100.22 (10.0.100.22) 56(84) bytes of data.
+--- 10.0.100.22 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 1020ms
+mininet> *** Stopping network
+*** Stopping 1 controllers
+faucet 
+*** Stopping 25 links
+.........................
+*** Stopping 7 switches
+a_core a_f1 a_f2 b_core b_f1 b_f2 b_f3 
+*** Stopping 18 hosts
+a1_emp a1_gst a1_mgt a2_emp a2_gst a2_mgt b1_emp b1_gst b1_mgt b2_emp b2_gst b2_mgt b3_emp b3_gst b3_mgt internet isp_a isp_b 
+*** Done
+--- na afloop, bridges over:
+0

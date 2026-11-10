@@ -1,0 +1,433 @@
+---
+# Faucet-configuratie voor de IPv4-topologie van opdracht 2 (IPV4_Topo_opdracht2.py).
+#
+# Faucet doet hier:
+#   - VLAN-scheiding (employee 100, guest 200, management 300, ISP 500)
+#   - routering tussen de VLAN's (faucet_vips = gateway .1 per VLAN)
+#   - stacking tussen alle switches (Faucet kent de hele topologie)
+#   - een stateful firewall met connection tracking (ct-ACL's)
+#   - NAT (ct nat): verkeer naar internet krijgt bronadres 198.51.100.9
+#   - port security op managementpoorten en 1 Mbit/s voor guests
+# De ISP-routers isp_a en isp_b sturen alleen door; zij doen geen NAT.
+#
+# ct_state-waarden (OVS conntrack):
+#   0/0x20     = nog niet gevolgd (-trk)
+#   0x21/0x21  = gevolgd en nieuwe verbinding (+trk+new)
+#   0x22/0x22  = gevolgd en bestaande verbinding (+trk+est)
+#   0x24/0x24  = gevolgd en gerelateerd, bv. ICMP-fout (+trk+rel)
+# ct-actie:
+#   table: 0, nat: {}  = door conntrack en opnieuw door de poort-ACL (tabel 0);
+#                        nat: {} past een bestaande NAT-vertaling toe (heen en terug)
+#   table: 1, flags: 1 = verbinding vastleggen (commit) en verder door de Faucet-pipeline
+#   nat: {flags: 1, range_ipv4_min/max: 198.51.100.9}
+#                      = bij het vastleggen het bronadres omzetten (SNAT) naar 198.51.100.9
+#
+# Publiek blok 198.51.100.0/28, in twee helften:
+#   198.51.100.0/29 = ISP-segment (VLAN 500): isp_a .1, Faucet .2, isp_b .3
+#   198.51.100.8/29 = NAT-blok; de ISP-routers routeren dit naar Faucet (.2).
+# Het NAT-adres ligt bewust buiten het VIP-subnet: Faucet leert elk bron-IP
+# binnen een VIP-subnet als host. NAT naar .2 (de VIP zelf) liet Faucet zijn
+# eigen adres als host leren, waarna ping naar .2 niet meer werkte.
+
+meters:
+    # Guest-verkeer wordt per poort beperkt tot 1 Mbit/s.
+    guest-rate-limit:
+        meter_id: 1
+        entry:
+            flags: [KBPS, BURST, STATS]
+            bands:
+                - type: DROP
+                  rate: 1000
+                  burst_size: 100
+
+acls:
+    # ------------------------------------------------------------------
+    # Employee-poorten: mag naar internet, eigen VLAN en gateway.
+    # Mag geen nieuwe verbindingen starten naar guest of management.
+    # ------------------------------------------------------------------
+    office-fw:
+        - rule:
+              description: "ARP toestaan"
+              eth_type: 0x0806
+              actions: {allow: 1}
+        - rule:
+              description: "Nog niet gevolgd -> door conntrack"
+              eth_type: 0x0800
+              ct_state: 0/0x20
+              actions: {ct: {zone: 10, table: 0, nat: {}}}
+        - rule:
+              description: "Bestaande verbinding (antwoordverkeer)"
+              eth_type: 0x0800
+              ct_state: 0x22/0x22
+              actions: {allow: 1}
+        - rule:
+              description: "Gerelateerd verkeer (ICMP-fouten)"
+              eth_type: 0x0800
+              ct_state: 0x24/0x24
+              actions: {allow: 1}
+        - rule:
+              description: "Nieuw naar guest verboden"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ipv4_dst: 10.0.200.0/24
+              actions: {allow: 0}
+        - rule:
+              description: "Nieuw naar management verboden"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ipv4_dst: 10.0.30.0/24
+              actions: {allow: 0}
+        - rule:
+              description: "Nieuw naar intern (10.0.0.0/8): vastleggen, zonder NAT"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ipv4_dst: 10.0.0.0/8
+              actions: {ct: {zone: 10, flags: 1, table: 1}}
+        - rule:
+              description: "Nieuw naar internet: vastleggen + SNAT naar 198.51.100.9"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}
+        - rule:
+              description: "Al het andere droppen"
+              actions: {allow: 0}
+
+    # ------------------------------------------------------------------
+    # Guest-poorten: alleen naar internet (en de eigen gateway).
+    # Geen verkeer naar interne netwerken, ook niet naar andere guests.
+    # ------------------------------------------------------------------
+    guest-fw:
+        - rule:
+              description: "ARP toestaan"
+              eth_type: 0x0806
+              actions: {allow: 1}
+        - rule:
+              description: "Nog niet gevolgd -> door conntrack"
+              eth_type: 0x0800
+              ct_state: 0/0x20
+              actions: {ct: {zone: 10, table: 0, nat: {}}}
+        - rule:
+              description: "Bestaande verbinding, met 1 Mbit/s-limiet"
+              eth_type: 0x0800
+              ct_state: 0x22/0x22
+              actions: {allow: 1, meter: guest-rate-limit}
+        - rule:
+              description: "Gerelateerd verkeer (ICMP-fouten)"
+              eth_type: 0x0800
+              ct_state: 0x24/0x24
+              actions: {allow: 1, meter: guest-rate-limit}
+        - rule:
+              description: "Nieuw naar eigen gateway (ping .1)"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ipv4_dst: 10.0.200.1/32
+              actions: {ct: {zone: 10, flags: 1, table: 1}}
+        - rule:
+              description: "Nieuw naar alle interne netwerken verboden (ook andere guests)"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ipv4_dst: 10.0.0.0/8
+              actions: {allow: 0}
+        - rule:
+              description: "Nieuw naar internet: vastleggen + SNAT naar 198.51.100.9"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}
+        - rule:
+              description: "Al het andere droppen"
+              actions: {allow: 0}
+
+    # ------------------------------------------------------------------
+    # Management-poorten: port security (alleen het vaste MAC-adres) en
+    # stateful firewall. Mag naar employee, eigen VLAN en internet,
+    # niet naar guest. Elke regel matcht op het vaste bron-MAC.
+    # ------------------------------------------------------------------
+    mgt-fw-a1:
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0/0x20,
+                 actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x22/0x22,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x24/0x24,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 actions: {ct: {zone: 10, flags: 1, table: 1,
+                           nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-a2:
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0/0x20,
+                 actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x22/0x22,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x24/0x24,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 actions: {ct: {zone: 10, flags: 1, table: 1,
+                           nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b1:
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0/0x20,
+                 actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x22/0x22,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x24/0x24,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 actions: {ct: {zone: 10, flags: 1, table: 1,
+                           nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b2:
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0/0x20,
+                 actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x22/0x22,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x24/0x24,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 actions: {ct: {zone: 10, flags: 1, table: 1,
+                           nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b3:
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0/0x20,
+                 actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x22/0x22,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x24/0x24,
+                 actions: {allow: 1}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21,
+                 actions: {ct: {zone: 10, flags: 1, table: 1,
+                           nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+
+    # ------------------------------------------------------------------
+    # ISP-poorten (a_core p4, b_core p5): alleen antwoorden op verbindingen
+    # die van binnen zijn gestart. De opzoekregel (nat: {}) zet het
+    # doeladres 198.51.100.9 van een antwoord terug naar het privé-adres.
+    # Nieuwe verbindingen van buiten worden gedropt, behalve ping vanuit het
+    # ISP-segment naar Faucet .2 (Faucet beantwoordt een ping naar zijn VIP
+    # sowieso alleen vanuit het direct aangesloten subnet).
+    # ------------------------------------------------------------------
+    isp-uplink:
+        - rule:
+              description: "ARP toestaan"
+              eth_type: 0x0806
+              actions: {allow: 1}
+        - rule:
+              description: "Nog niet gevolgd -> door conntrack"
+              eth_type: 0x0800
+              ct_state: 0/0x20
+              actions: {ct: {zone: 10, table: 0, nat: {}}}
+        - rule:
+              description: "Antwoord op verbinding van binnen"
+              eth_type: 0x0800
+              ct_state: 0x22/0x22
+              actions: {allow: 1}
+        - rule:
+              description: "Gerelateerd verkeer (ICMP-fouten)"
+              eth_type: 0x0800
+              ct_state: 0x24/0x24
+              actions: {allow: 1}
+        - rule:
+              description: "Nieuw van buiten: alleen ping vanuit het ISP-segment naar Faucet .2"
+              eth_type: 0x0800
+              ct_state: 0x21/0x21
+              ip_proto: 1
+              ipv4_src: 198.51.100.0/29
+              ipv4_dst: 198.51.100.2/32
+              actions: {ct: {zone: 10, flags: 1, table: 1}}
+        - rule:
+              description: "Nieuwe verbinding van buiten naar binnen: droppen"
+              actions: {allow: 0}
+
+vlans:
+    office:
+        vid: 100
+        description: "Employee 10.0.100.0/23"
+        faucet_vips: ["10.0.100.1/23"]
+    guest:
+        vid: 200
+        description: "Guest 10.0.200.0/24"
+        faucet_vips: ["10.0.200.1/24"]
+    management:
+        vid: 300
+        description: "Management 10.0.30.0/24"
+        faucet_vips: ["10.0.30.1/24"]
+    isp:
+        vid: 500
+        description: "ISP-segment 198.51.100.0/29 (isp_a .1, Faucet .2, isp_b .3)"
+        faucet_vips: ["198.51.100.2/29"]
+        routes:
+            - route:
+                  ip_dst: "0.0.0.0/0"
+                  ip_gw: "198.51.100.1"
+
+routers:
+    # Routering tussen alle VLAN's; de firewall-ACL's bepalen wat mag.
+    intern:
+        vlans: [office, guest, management, isp]
+
+dps:
+    a_core:
+        dp_id: 0x1
+        hardware: "Open vSwitch"
+        stack:
+            priority: 1     # stack-root
+        interfaces:
+            1:
+                description: "Stack naar a_f1"
+                stack: {dp: a_f1, port: 1}
+            2:
+                description: "Stack naar a_f2"
+                stack: {dp: a_f2, port: 1}
+            3:
+                description: "Darkfiber naar b_core"
+                stack: {dp: b_core, port: 4}
+            4:
+                description: "ISP-router A (isp_a)"
+                native_vlan: isp
+                acls_in: [isp-uplink]
+
+    a_f1:
+        dp_id: 0x2
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar a_core"
+                stack: {dp: a_core, port: 1}
+            2:
+                description: "Employee a1_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest a1_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management a1_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-a1]
+
+    a_f2:
+        dp_id: 0x3
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar a_core"
+                stack: {dp: a_core, port: 2}
+            2:
+                description: "Employee a2_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest a2_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management a2_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-a2]
+
+    b_core:
+        dp_id: 0x4
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar b_f1"
+                stack: {dp: b_f1, port: 1}
+            2:
+                description: "Stack naar b_f2"
+                stack: {dp: b_f2, port: 1}
+            3:
+                description: "Stack naar b_f3"
+                stack: {dp: b_f3, port: 1}
+            4:
+                description: "Darkfiber naar a_core"
+                stack: {dp: a_core, port: 3}
+            5:
+                description: "ISP-router B (isp_b)"
+                native_vlan: isp
+                acls_in: [isp-uplink]
+
+    b_f1:
+        dp_id: 0x5
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 1}
+            2:
+                description: "Employee b1_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b1_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b1_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b1]
+
+    b_f2:
+        dp_id: 0x6
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 2}
+            2:
+                description: "Employee b2_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b2_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b2_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b2]
+
+    b_f3:
+        dp_id: 0x7
+        hardware: "Open vSwitch"
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 3}
+            2:
+                description: "Employee b3_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b3_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b3_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b3]

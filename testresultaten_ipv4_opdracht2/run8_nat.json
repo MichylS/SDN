@@ -1,0 +1,455 @@
+{
+  "summary": {
+    "totaal": 54,
+    "geslaagd": 54,
+    "mislukt": 0
+  },
+  "results": [
+    {
+      "group": "1-gateway",
+      "test": "a1_emp -> gateway (10.0.100.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "a1_gst -> gateway (10.0.200.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "a1_mgt -> gateway (10.0.30.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "a2_emp -> gateway (10.0.100.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "a2_gst -> gateway (10.0.200.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "a2_mgt -> gateway (10.0.30.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b1_emp -> gateway (10.0.100.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b1_gst -> gateway (10.0.200.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b1_mgt -> gateway (10.0.30.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b2_emp -> gateway (10.0.100.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b2_gst -> gateway (10.0.200.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b2_mgt -> gateway (10.0.30.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b3_emp -> gateway (10.0.100.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b3_gst -> gateway (10.0.200.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "1-gateway",
+      "test": "b3_mgt -> gateway (10.0.30.254)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "2-zelfde-vlan",
+      "test": "a1_emp -> a2_emp (10.0.100.12)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "2-zelfde-vlan",
+      "test": "a1_emp -> b3_emp (10.0.100.23)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "2-zelfde-vlan",
+      "test": "a1_mgt -> b2_mgt (10.0.30.22)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "a1_mgt -> b1_emp (10.0.100.21)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "b3_mgt -> a2_emp (10.0.100.12)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "a1_emp -> a1_mgt (10.0.30.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "b2_emp -> a2_mgt (10.0.30.12)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "a1_emp -> b2_gst (10.0.200.22)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "b1_mgt -> a1_gst (10.0.200.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "a2_gst -> a1_emp (10.0.100.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "3-tussen-vlan",
+      "test": "b3_gst -> b3_mgt (10.0.30.23)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "4-gastisolatie",
+      "test": "a1_gst -> a2_gst (10.0.200.12)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "4-gastisolatie",
+      "test": "a1_gst -> b1_gst (10.0.200.21)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "4-gastisolatie",
+      "test": "b2_gst -> b3_gst (10.0.200.23)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "a1_emp -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "b2_emp -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "a2_gst -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "b3_gst -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "a1_mgt -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "5-internet",
+      "test": "b1_mgt -> internet (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "6-nat",
+      "test": "bron op internet-eth0 = 198.51.100.9 (a1_emp en b3_gst)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "zie tcpdump in rapport"
+    },
+    {
+      "group": "6-nat",
+      "test": "conntrack: 10.0.100.11 -> 8.8.8.8, antwoord naar 198.51.100.9",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "5 NAT-verbinding(en)"
+    },
+    {
+      "group": "6-nat",
+      "test": "isp_a en isp_b hebben geen SNAT/MASQUERADE-regels",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "iptables -t nat leeg"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "isp_a -> a1_emp (10.0.100.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "isp_b -> b1_mgt (10.0.30.21)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "isp_a -> a2_gst (10.0.200.12)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "isp_a -> Faucet-VIP (198.51.100.2)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "internet -> Faucet-VIP (198.51.100.2)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "7-van-buiten",
+      "test": "internet -> NAT-adres (198.51.100.9)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP a1_emp -> internet:8000 (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "wget rc=0"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP b2_gst -> internet:8000 (8.8.8.8)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "wget rc=0"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP a1_mgt -> b1_emp:8000 (10.0.100.21)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "wget rc=0"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP b1_emp -> a1_mgt:8000 (10.0.30.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "wget rc=4"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP a2_gst -> a2_emp:8000 (10.0.100.12)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "wget rc=4"
+    },
+    {
+      "group": "8-tcp",
+      "test": "TCP isp_a -> a1_emp:8000 (10.0.100.11)",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "wget rc=4"
+    },
+    {
+      "group": "9-port-security",
+      "test": "a1_mgt met vals MAC 02:00:00:00:30:99 -> gateway",
+      "expected": "geblokkeerd",
+      "actual": "geblokkeerd",
+      "pass": true,
+      "detail": "100% loss"
+    },
+    {
+      "group": "9-port-security",
+      "test": "a1_mgt met juist MAC 02:00:00:00:30:11 -> gateway",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "0% loss"
+    },
+    {
+      "group": "10-ratelimit",
+      "test": "a1_gst -> internet <= 1.2 Mbit/s (meter 1 Mbit/s)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "1.05 Mbit/s"
+    },
+    {
+      "group": "10-ratelimit",
+      "test": "a1_emp -> internet > 5 Mbit/s (geen limiet)",
+      "expected": "werkt",
+      "actual": "werkt",
+      "pass": true,
+      "detail": "13468.68 Mbit/s"
+    }
+  ],
+  "evidence": {
+    "stack_up_sec": 0.0,
+    "opstarttijd_sec": 4.5,
+    "nat_tcpdump_internet_eth0": "13:35:44.638107 IP 198.51.100.9 > 8.8.8.8: ICMP echo request, id 28451, seq 1, length 64\r\n13:35:44.638132 IP 8.8.8.8 > 198.51.100.9: ICMP echo reply, id 28451, seq 1, length 64\r\n13:35:44.952585 IP 198.51.100.9 > 8.8.8.8: ICMP echo request, id 28451, seq 2, length 64\r\n13:35:44.952603 IP 8.8.8.8 > 198.51.100.9: ICMP echo reply, id 28451, seq 2, length 64\r\n13:35:44.955600 IP 198.51.100.9 > 8.8.8.8: ICMP echo request, id 28452, seq 1, length 64\r\n13:35:44.955667 IP 8.8.8.8 > 198.51.100.9: ICMP echo reply, id 28452, seq 1, length 64\r\n13:35:45.272587 IP 198.51.100.9 > 8.8.8.8: ICMP echo request, id 28452, seq 2, length 64\r\n13:35:45.272648 IP 8.8.8.8 > 198.51.100.9: ICMP echo reply, id 28452, seq 2, length 64",
+    "conntrack_nat_a1_emp": "tcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46228,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46228),zone=10,protoinfo=(state=TIME_WAIT)\nicmp,orig=(src=10.0.100.11,dst=8.8.8.8,id=28451,type=8,code=0),reply=(src=8.8.8.8,dst=198.51.100.9,id=28451,type=0,code=0),zone=10\ntcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=35626,dport=8000),reply=(src=8.8.8.8,dst=198.51.100.9,sport=8000,dport=35626),zone=10,protoinfo=(state=TIME_WAIT)",
+    "iptables_nat_isp": "isp_a: -P POSTROUTING ACCEPT\nisp_b: -P POSTROUTING ACCEPT",
+    "iperf_guest": "ontvangen 1.05 Mbit/s, verzonden 1.25 Mbit/s, retransmits 238",
+    "iperf_employee": "ontvangen 13468.68 Mbit/s, verzonden 13470.05 Mbit/s, retransmits 2",
+    "flows_a_f1_ct": "cookie=0x5adc15c0, table=0, n_packets=369524, n_bytes=16417993941, priority=20479,ct_state=-trk,ip,in_port=2 actions=ct(table=0,zone=10,nat)\r\n cookie=0x5adc15c0, table=0, n_packets=977, n_bytes=1725068, priority=20479,ct_state=-trk,ip,in_port=3 actions=ct(table=0,zone=10,nat)\r\n cookie=0x5adc15c0, table=0, n_packets=3, n_bytes=294, priority=20479,ct_state=-trk,ip,in_port=4,dl_src=02:00:00:00:30:11 actions=ct(table=0,zone=10,nat)\r\n cookie=0x5adc15c0, table=0, n_packets=369506, n_bytes=16417992249, priority=20478,ct_state=+est+trk,ip,in_port=2 actions=goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=966, n_bytes=1724038, priority=20478,ct_state=+est+trk,ip,in_port=3 actions=meter:1,goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20478,ct_state=+est+trk,ip,in_port=4,dl_src=02:00:00:00:30:11 actions=goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20477,ct_state=+rel+trk,ip,in_port=2 actions=goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20477,ct_state=+rel+trk,ip,in_port=3 actions=meter:1,goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20477,ct_state=+rel+trk,ip,in_port=4,dl_src=02:00:00:00:30:11 actions=goto_table:1\r\n cookie=0x5adc15c0, table=0, n_packets=3, n_bytes=294, priority=20476,ct_state=+new+trk,ip,in_port=2,nw_dst=10.0.200.0/24 actions=drop\r\n cookie=0x5adc15c0, table=0, n_packets=3, n_bytes=294, priority=20475,ct_state=+new+trk,ip,in_port=2,nw_dst=10.0.30.0/24 actions=drop\r\n cookie=0x5adc15c0, table=0, n_packets=3, n_bytes=294, priority=20476,ct_state=+new+trk,ip,in_port=3,nw_dst=10.0.200.254 actions=ct(commit,table=1,zone=10)\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20476,ct_state=+new+trk,ip,in_port=4,dl_src=02:00:00:00:30:11,nw_dst=10.0.200.0/24 actions=drop\r\n cookie=0x5adc15c0, table=0, n_packets=6, n_bytes=588, priority=20475,ct_state=+new+trk,ip,in_port=3,nw_dst=10.0.0.0/8 actions=drop\r\n cookie=0x5adc15c0, table=0, n_packets=7, n_bytes=686, priority=20474,ct_state=+new+trk,ip,in_port=2,nw_dst=10.0.0.0/8 actions=ct(commit,table=1,zone=10)\r\n cookie=0x5adc15c0, table=0, n_packets=3, n_bytes=294, priority=20475,ct_state=+new+trk,ip,in_port=4,dl_src=02:00:00:00:30:11,nw_dst=10.0.0.0/8 actions=ct(commit,table=1,zone=10)\r\n cookie=0x5adc15c0, table=0, n_packets=2, n_bytes=148, priority=20474,ct_state=+new+trk,ip,in_port=3 actions=ct(commit,table=1,zone=10,nat(src=198.51.100.9))\r\n cookie=0x5adc15c0, table=0, n_packets=5, n_bytes=418, priority=20473,ct_state=+new+trk,ip,in_port=2 actions=ct(commit,table=1,zone=10,nat(src=198.51.100.9))\r\n cookie=0x5adc15c0, table=0, n_packets=0, n_bytes=0, priority=20474,ct_state=+new+trk,ip,in_port=4,dl_src=02:00:00:00:30:11 actions=ct(commit,table=1,zone=10,nat(src=198.51.100.9))",
+    "meter_stats_a_f1": "OFPST_METER reply (OF1.3) (xid=0x2):\r\nmeter:1 flow_count:2 packet_in_count:966 byte_in_count:1724038 duration:88.518s bands:\r\n0: packet_count:151 byte_count:357318",
+    "conntrack_zone10": "tcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46266,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46266),zone=10,protoinfo=(state=CLOSING)\r\ntcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46228,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46228),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.200.11,dst=8.8.8.8,sport=33246,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=33246),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=35664,dport=8000),reply=(src=8.8.8.8,dst=198.51.100.9,sport=8000,dport=35664),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46226,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46226),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.100.11,dst=8.8.8.8,sport=46264,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=46264),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.30.11,dst=10.0.100.21,sport=58566,dport=8000),reply=(src=10.0.100.21,dst=10.0.30.11,sport=8000,dport=58566),zone=10,protoinfo=(state=TIME_WAIT)\r\nicmp,orig=(src=10.0.30.11,dst=10.0.30.254,id=28496,type=8,code=0),reply=(src=10.0.30.254,dst=10.0.30.11,id=28496,type=0,code=0),zone=10\r\ntcp,orig=(src=10.0.200.22,dst=8.8.8.8,sport=39478,dport=8000),reply=(src=8.8.8.8,dst=198.51.100.9,sport=8000,dport=39478),zone=10,protoinfo=(state=TIME_WAIT)\r\ntcp,orig=(src=10.0.200.11,dst=8.8.8.8,sport=33284,dport=5201),reply=(src=8.8.8.8,dst=198.51.100.9,sport=5201,dport=33284),zone=10,protoinfo=(state=TIME_WAIT)",
+    "routes_isp_a": "default via 203.0.113.2 dev isp_a-eth1 \r\n198.51.100.0/29 dev isp_a-eth0 proto kernel scope link src 198.51.100.1 \r\n198.51.100.8/29 via 198.51.100.2 dev isp_a-eth0 \r\n203.0.113.0/30 dev isp_a-eth1 proto kernel scope link src 203.0.113.1",
+    "routes_internet": "198.51.100.0/28 via 203.0.113.1 dev internet-eth0 metric 10 \r\n198.51.100.0/28 via 203.0.113.5 dev internet-eth1 metric 20 \r\n203.0.113.0/30 dev internet-eth0 proto kernel scope link src 203.0.113.2 \r\n203.0.113.4/30 dev internet-eth1 proto kernel scope link src 203.0.113.6"
+  }
+}

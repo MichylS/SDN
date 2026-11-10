@@ -1,0 +1,57 @@
+Stack UP na 0.0 s, netwerk klaar na 4.5 s
+[PASS] 1-gateway      a1_emp -> gateway (10.0.100.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      a1_gst -> gateway (10.0.200.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      a1_mgt -> gateway (10.0.30.254)                         verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      a2_emp -> gateway (10.0.100.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      a2_gst -> gateway (10.0.200.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      a2_mgt -> gateway (10.0.30.254)                         verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b1_emp -> gateway (10.0.100.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b1_gst -> gateway (10.0.200.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b1_mgt -> gateway (10.0.30.254)                         verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b2_emp -> gateway (10.0.100.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b2_gst -> gateway (10.0.200.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b2_mgt -> gateway (10.0.30.254)                         verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b3_emp -> gateway (10.0.100.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b3_gst -> gateway (10.0.200.254)                        verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 1-gateway      b3_mgt -> gateway (10.0.30.254)                         verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 2-zelfde-vlan  a1_emp -> a2_emp (10.0.100.12)                          verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 2-zelfde-vlan  a1_emp -> b3_emp (10.0.100.23)                          verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 2-zelfde-vlan  a1_mgt -> b2_mgt (10.0.30.22)                           verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 3-tussen-vlan  a1_mgt -> b1_emp (10.0.100.21)                          verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 3-tussen-vlan  b3_mgt -> a2_emp (10.0.100.12)                          verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 3-tussen-vlan  a1_emp -> a1_mgt (10.0.30.11)                           verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 3-tussen-vlan  b2_emp -> a2_mgt (10.0.30.12)                           verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 3-tussen-vlan  a1_emp -> b2_gst (10.0.200.22)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 3-tussen-vlan  b1_mgt -> a1_gst (10.0.200.11)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 3-tussen-vlan  a2_gst -> a1_emp (10.0.100.11)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 3-tussen-vlan  b3_gst -> b3_mgt (10.0.30.23)                           verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 4-gastisolatie a1_gst -> a2_gst (10.0.200.12)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 4-gastisolatie a1_gst -> b1_gst (10.0.200.21)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 4-gastisolatie b2_gst -> b3_gst (10.0.200.23)                          verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 5-internet     a1_emp -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 5-internet     b2_emp -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 5-internet     a2_gst -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 5-internet     b3_gst -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 5-internet     a1_mgt -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 5-internet     b1_mgt -> internet (8.8.8.8)                            verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 6-nat          bron op internet-eth0 = 198.51.100.9 (a1_emp en b3_gst) verwacht=werkt       resultaat=werkt       zie tcpdump in rapport
+[PASS] 6-nat          conntrack: 10.0.100.11 -> 8.8.8.8, antwoord naar 198.51.100.9 verwacht=werkt       resultaat=werkt       5 NAT-verbinding(en)
+[PASS] 6-nat          isp_a en isp_b hebben geen SNAT/MASQUERADE-regels       verwacht=werkt       resultaat=werkt       iptables -t nat leeg
+[PASS] 7-van-buiten   isp_a -> a1_emp (10.0.100.11)                           verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 7-van-buiten   isp_b -> b1_mgt (10.0.30.21)                            verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 7-van-buiten   isp_a -> a2_gst (10.0.200.12)                           verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 7-van-buiten   isp_a -> Faucet-VIP (198.51.100.2)                      verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 7-van-buiten   internet -> Faucet-VIP (198.51.100.2)                   verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 7-van-buiten   internet -> NAT-adres (198.51.100.9)                    verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 8-tcp          TCP a1_emp -> internet:8000 (8.8.8.8)                   verwacht=werkt       resultaat=werkt       wget rc=0
+[PASS] 8-tcp          TCP b2_gst -> internet:8000 (8.8.8.8)                   verwacht=werkt       resultaat=werkt       wget rc=0
+[PASS] 8-tcp          TCP a1_mgt -> b1_emp:8000 (10.0.100.21)                 verwacht=werkt       resultaat=werkt       wget rc=0
+[PASS] 8-tcp          TCP b1_emp -> a1_mgt:8000 (10.0.30.11)                  verwacht=geblokkeerd resultaat=geblokkeerd wget rc=4
+[PASS] 8-tcp          TCP a2_gst -> a2_emp:8000 (10.0.100.12)                 verwacht=geblokkeerd resultaat=geblokkeerd wget rc=4
+[PASS] 8-tcp          TCP isp_a -> a1_emp:8000 (10.0.100.11)                  verwacht=geblokkeerd resultaat=geblokkeerd wget rc=4
+[PASS] 9-port-security a1_mgt met vals MAC 02:00:00:00:30:99 -> gateway        verwacht=geblokkeerd resultaat=geblokkeerd 100% loss
+[PASS] 9-port-security a1_mgt met juist MAC 02:00:00:00:30:11 -> gateway       verwacht=werkt       resultaat=werkt       0% loss
+[PASS] 10-ratelimit   a1_gst -> internet <= 1.2 Mbit/s (meter 1 Mbit/s)       verwacht=werkt       resultaat=werkt       1.05 Mbit/s
+[PASS] 10-ratelimit   a1_emp -> internet > 5 Mbit/s (geen limiet)             verwacht=werkt       resultaat=werkt       13468.68 Mbit/s
+
+Samenvatting: 54/54 geslaagd, 0 mislukt
