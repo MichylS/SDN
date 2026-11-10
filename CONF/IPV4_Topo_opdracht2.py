@@ -3,7 +3,8 @@
 # Routering, firewall en NAT worden door Faucet gedaan (faucet_vips + ct-ACL's
 # met ct nat). Faucet zet de privé-adressen om naar zijn publieke adres
 # 198.51.100.9. Elk gebouw heeft een eigen ISP-router (isp_a, isp_b): dat is
-# apparatuur van de provider, niet door Faucet beheerd, die alleen doorstuurt.
+# apparatuur van de provider, niet door Faucet beheerd. Wat achter de ISP ligt
+# (het internet) bouwen we niet na: de ISP-routers zelf zijn het eindpunt.
 import argparse
 from mininet.cli import CLI
 from mininet.link import TCLink
@@ -51,23 +52,16 @@ FAUCET_PUBLIC = "198.51.100.2"
 NAT_POOL = "198.51.100.8/29"
 NAT_IP = "198.51.100.9"
 
-# ISP-routers:
-# (naam, core-switch, poort, klantzijde, internetzijde, adres van "internet" op die link)
+# ISP-routers: (naam, core-switch, poort, adres in het ISP-segment)
 ISP_ROUTERS = [
-    ("isp_a", "a_core", 4, "198.51.100.1/29", "203.0.113.1/30", "203.0.113.2/30"),
-    ("isp_b", "b_core", 5, "198.51.100.3/29", "203.0.113.5/30", "203.0.113.6/30"),
+    ("isp_a", "a_core", 4, "198.51.100.1/29"),
+    ("isp_b", "b_core", 5, "198.51.100.3/29"),
 ]
 
-# Vast IP-adres van de host "internet" (staat op zijn loopback, bereikbaar via beide ISP's).
-INTERNET_IP = "8.8.8.8"
-
-
+# Router van de ISP: Linux-node met IP-forwarding (zoals mininet/examples/linuxrouter.py).
+# Geen NAT en geen firewall; dat doet Faucet.
 class LinuxRouter(Node):
-    """Router van de ISP: Linux-node met IP-forwarding (zoals mininet/examples/linuxrouter.py).
-
-    Stuurt alleen door, zonder NAT en zonder firewall; dat doet Faucet.
-    """
-
+    
     def config(self, **params):
         super().config(**params)
         self.cmd("sysctl -w net.ipv4.ip_forward=1")
@@ -117,17 +111,10 @@ class BuildingsTopo(Topo):
         # Darkfiber tussen de cores.
         self.addLink("a_core", "b_core", port1=3, port2=4)
 
-        # Host "internet": krijgt zijn adressen per link (zie hieronder).
-        self.addHost("internet", ip=None)
-
-        # ISP-routers: eth0 naar de core (klantzijde), eth1 naar de host "internet".
-        for i, (name, core, port, inside, outside, peer) in enumerate(ISP_ROUTERS):
-            self.addNode(name, cls=LinuxRouter, ip=inside)
+        # ISP-routers: eth0 naar de core-switch, in het ISP-segment.
+        for name, core, port, address in ISP_ROUTERS:
+            self.addNode(name, cls=LinuxRouter, ip=address)
             self.addLink(core, name, port1=port, port2=0)
-            self.addLink(
-                name, "internet", port1=1, port2=i,
-                params1={"ip": outside}, params2={"ip": peer},
-            )
 
 
 def configure_hosts(net):
@@ -137,21 +124,19 @@ def configure_hosts(net):
             net[name].cmd("ip route replace default via %s" % gw4(kind))
 
 
-def configure_isp(net):
-    for name, _core, _port, _inside, _outside, peer in ISP_ROUTERS:
-        router = net[name]
-        # Naar buiten: default route naar de host "internet".
-        router.cmd("ip route replace default via %s" % peer.split("/")[0])
-        # Naar binnen: het NAT-blok van de klant ligt achter Faucet (.2).
-        # Gewone routering, geen NAT op de ISP-router.
-        router.cmd("ip route replace %s via %s" % (NAT_POOL, FAUCET_PUBLIC))
+def isp_ip(name):
+    # IP-adres van een ISP-router zonder prefixlengte, bv. isp_ip("isp_a") = 198.51.100.1.
+    for router, _core, _port, address in ISP_ROUTERS:
+        if router == name:
+            return address.split("/")[0]
+    raise KeyError(name)
 
-    inet = net["internet"]
-    # Vast IP-adres van de host "internet".
-    inet.cmd("ip addr add %s/32 dev lo" % INTERNET_IP)
-    # Route terug naar het publieke /28 van de klant: via isp_a, isp_b als reserve.
-    for metric, (_name, _core, _port, _inside, outside, _peer) in zip((10, 20), ISP_ROUTERS):
-        inet.cmd("ip route add %s via %s metric %d" % (PUBLIC_NET, outside.split("/")[0], metric))
+
+def configure_isp(net):
+    for name, _core, _port, _address in ISP_ROUTERS:
+        # Het NAT-blok van de klant ligt achter Faucet (.2): zonder deze route
+        # komen antwoorden aan 198.51.100.9 niet terug. Gewone routering, geen NAT.
+        net[name].cmd("ip route replace %s via %s" % (NAT_POOL, FAUCET_PUBLIC))
 
 
 def run_topology(controller_ip):
@@ -174,7 +159,7 @@ def run_topology(controller_ip):
     info("*** Waiting for switches to connect to Faucet and the stack to come up\n")
     quietRun("sleep 12")
 
-    info("*** Configuring hosts, ISP routers and internet\n")
+    info("*** Configuring hosts, ISP routers\n")
     configure_hosts(net)
     configure_isp(net)
 

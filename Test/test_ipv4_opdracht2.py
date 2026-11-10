@@ -9,6 +9,9 @@ stdout en naar een JSON-bestand. Draaien op de Mininet-VM:
 Met --zonder-fw verwacht het script de variant zonder firewall
 (IPV4_Topo_opdracht2_zonder_fw.yml): verkeer tussen de interne VLAN's werkt
 dan overal; NAT, port security, rate limit en "van buiten dicht" blijven gelijk.
+
+Er is geen host "internet": de ISP-routers isp_a (198.51.100.1) en isp_b
+(198.51.100.3) zijn het eindpunt buiten Faucet.
 """
 import argparse
 import json
@@ -28,6 +31,9 @@ import IPV4_Topo_opdracht2 as topo  # noqa: E402
 
 RESULTS = []
 EVIDENCE = {}
+
+ISP_A = topo.isp_ip("isp_a")   # 198.51.100.1
+ISP_B = topo.isp_ip("isp_b")   # 198.51.100.3
 
 
 def ip_of(net, name):
@@ -183,32 +189,33 @@ def run(controller_ip, outfile, zonder_fw=False):
         ping_test(net, "4-gastisolatie", "a1_gst", "b1_gst", fw_blokkeert)
         ping_test(net, "4-gastisolatie", "b2_gst", "b3_gst", fw_blokkeert)
 
-        # 5. Internet (via Faucet-routering en NAT in Faucet).
-        for host in ("a1_emp", "b2_emp", "a2_gst", "b3_gst", "a1_mgt", "b1_mgt"):
-            ping_test(net, "5-internet", host, topo.INTERNET_IP, True, "internet")
+        # 5. ISP-routers bereikbaar (via Faucet-routering en NAT in Faucet).
+        for host, isp in (("a1_emp", "isp_a"), ("b2_emp", "isp_b"), ("a2_gst", "isp_a"),
+                          ("b3_gst", "isp_b"), ("a1_mgt", "isp_a"), ("b1_mgt", "isp_b")):
+            ping_test(net, "5-isp", host, topo.isp_ip(isp), True, isp)
 
-        # 6. NAT in Faucet: de host internet ziet alleen het NAT-adres, nooit 10.x.
-        inet = net["internet"]
-        inet.cmd("rm -f /tmp/nat.txt; tcpdump -n -l -i internet-eth0 -c 8 icmp "
-                 "> /tmp/nat.txt 2>/dev/null &")
+        # 6. NAT in Faucet: isp_a ziet alleen het NAT-adres, nooit 10.x.
+        isp_a = net["isp_a"]
+        isp_a.cmd("rm -f /tmp/nat.txt; tcpdump -n -l -i isp_a-eth0 -c 8 icmp "
+                  "> /tmp/nat.txt 2>/dev/null &")
         time.sleep(1.5)
-        ping(net, "a1_emp", topo.INTERNET_IP, count=2)
-        ping(net, "b3_gst", topo.INTERNET_IP, count=2)
+        ping(net, "a1_emp", ISP_A, count=2)
+        ping(net, "b3_gst", ISP_A, count=2)
         time.sleep(1.5)
-        inet.cmd("pkill -f 'tcpdump -n -l -i internet-eth0' ; true")
-        capture = inet.cmd("cat /tmp/nat.txt")
-        EVIDENCE["nat_tcpdump_internet_eth0"] = capture.strip()
-        nat_ok = (capture.count("%s > 8.8.8.8" % topo.NAT_IP) >= 2
+        isp_a.cmd("pkill -f 'tcpdump -n -l -i isp_a-eth0' ; true")
+        capture = isp_a.cmd("cat /tmp/nat.txt")
+        EVIDENCE["nat_tcpdump_isp_a_eth0"] = capture.strip()
+        nat_ok = (capture.count("%s > %s" % (topo.NAT_IP, ISP_A)) >= 2
                   and not re.search(r"\b10\.\d+\.\d+\.\d+", capture))
-        record("6-nat", "bron op internet-eth0 = %s (a1_emp en b3_gst)" % topo.NAT_IP, True,
+        record("6-nat", "bron op isp_a-eth0 = %s (a1_emp en b3_gst)" % topo.NAT_IP, True,
                nat_ok, "zie tcpdump in rapport")
 
         # De vertaling staat in de conntrack-tabel van Faucet (zone 10).
         ct = net["a_f1"].cmd("ovs-appctl dpctl/dump-conntrack zone=10")
         ct_nat = [l for l in ct.splitlines()
-                  if "src=10.0.100.11,dst=8.8.8.8" in l and "dst=%s," % topo.NAT_IP in l]
+                  if "src=10.0.100.11,dst=%s," % ISP_A in l and "dst=%s," % topo.NAT_IP in l]
         EVIDENCE["conntrack_nat_a1_emp"] = "\n".join(ct_nat[:3])
-        record("6-nat", "conntrack: 10.0.100.11 -> 8.8.8.8, antwoord naar %s" % topo.NAT_IP,
+        record("6-nat", "conntrack: 10.0.100.11 -> %s, antwoord naar %s" % (ISP_A, topo.NAT_IP),
                True, bool(ct_nat), "%d NAT-verbinding(en)" % len(ct_nat))
 
         # De ISP-routers doen zelf geen NAT meer.
@@ -229,12 +236,12 @@ def run(controller_ip, outfile, zonder_fw=False):
         ping_test(net, "7-van-buiten", "isp_b", "b1_mgt", False)
         ping_test(net, "7-van-buiten", "isp_a", "a2_gst", False)
         ping_test(net, "7-van-buiten", "isp_a", "198.51.100.2", True, "Faucet-VIP")
-        ping_test(net, "7-van-buiten", "internet", "198.51.100.2", False, "Faucet-VIP")
-        ping_test(net, "7-van-buiten", "internet", topo.NAT_IP, False, "NAT-adres")
+        ping_test(net, "7-van-buiten", "isp_a", topo.NAT_IP, False, "NAT-adres")
+        ping_test(net, "7-van-buiten", "isp_b", topo.NAT_IP, False, "NAT-adres")
 
         # 8. TCP (stateful, met handshake).
-        http_test(net, "8-tcp", "a1_emp", "internet", topo.INTERNET_IP, True)
-        http_test(net, "8-tcp", "b2_gst", "internet", topo.INTERNET_IP, True)
+        http_test(net, "8-tcp", "a1_emp", "isp_a", ISP_A, True)
+        http_test(net, "8-tcp", "b2_gst", "isp_b", ISP_B, True)
         http_test(net, "8-tcp", "a1_mgt", "b1_emp", ip_of(net, "b1_emp"), True)
         http_test(net, "8-tcp", "b1_emp", "a1_mgt", ip_of(net, "a1_mgt"), fw_blokkeert)
         http_test(net, "8-tcp", "a2_gst", "a2_emp", ip_of(net, "a2_emp"), fw_blokkeert)
@@ -256,13 +263,13 @@ def run(controller_ip, outfile, zonder_fw=False):
                loss < 100, "%d%% loss" % loss)
 
         # 10. Rate limiting: guest max ~1 Mbit/s, employee niet beperkt.
-        gst_rate, gst_out = iperf_rate(net, "a1_gst", "internet", topo.INTERNET_IP)
-        emp_rate, emp_out = iperf_rate(net, "a1_emp", "internet", topo.INTERNET_IP)
+        gst_rate, gst_out = iperf_rate(net, "a1_gst", "isp_a", ISP_A)
+        emp_rate, emp_out = iperf_rate(net, "a1_emp", "isp_a", ISP_A)
         EVIDENCE["iperf_guest"] = gst_out.strip()
         EVIDENCE["iperf_employee"] = emp_out.strip()
-        record("10-ratelimit", "a1_gst -> internet <= 1.2 Mbit/s (meter 1 Mbit/s)", True,
+        record("10-ratelimit", "a1_gst -> isp_a <= 1.2 Mbit/s (meter 1 Mbit/s)", True,
                0 < gst_rate <= 1.2, "%.2f Mbit/s" % gst_rate)
-        record("10-ratelimit", "a1_emp -> internet > 5 Mbit/s (geen limiet)", True,
+        record("10-ratelimit", "a1_emp -> isp_a > 5 Mbit/s (geen limiet)", True,
                emp_rate > 5, "%.2f Mbit/s" % emp_rate)
 
         # Bewijs uit de switches en conntrack.
@@ -274,7 +281,7 @@ def run(controller_ip, outfile, zonder_fw=False):
         EVIDENCE["conntrack_zone10"] = sw.cmd(
             "ovs-appctl dpctl/dump-conntrack zone=10 | head -25").strip()
         EVIDENCE["routes_isp_a"] = net["isp_a"].cmd("ip route").strip()
-        EVIDENCE["routes_internet"] = net["internet"].cmd("ip route").strip()
+        EVIDENCE["routes_isp_b"] = net["isp_b"].cmd("ip route").strip()
     finally:
         net.stop()
 
