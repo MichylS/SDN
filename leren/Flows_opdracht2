@@ -1,0 +1,148 @@
+1. prio 20480 · in_port=eth1 → goto_table:1
+De stackpoort naar a_core. Hier staat geen ACL, dus alles mag door. Wat via de stack binnenkomt, is al gefilterd op de switch waar het het netwerk in kwam. De 175 pakketten zijn waarschijnlijk de LLDP-pakketten waarmee Faucet de stacklink controleert, en ARP-broadcasts van hosts op andere switches.
+
+2. prio 20473 · in_port=eth3 → drop
+De laatste regel van guest-fw: "al het andere droppen". Wat van de guestpoort komt en nergens anders op past, gaat weg. De 10 pakketten zijn waarschijnlijk IPv6, want de ACL laat alleen ARP en IPv4 toe.
+
+3. prio 20473 · in_port=eth4 → drop
+De laatste regel van mgt-fw-a1. Deze regel is ook de port security: hij heeft géén dl_src, dus alles van eth4 met een ander MAC-adres valt hierin. Ook hier zijn de 9 pakketten waarschijnlijk IPv6.
+
+4. prio 20472 · in_port=eth2 → drop
+De laatste regel van office-fw. Zijn prioriteit is één lager dan bij guest en management, omdat office-fw één regel meer heeft: twee verbodsregels in plaats van één.
+
+5. prio 20480 · arp, in_port=eth2 → goto_table:1
+ARP van a1_emp mag door. Zonder ARP vindt de host het MAC-adres van zijn gateway niet. De 13 pakketten zijn ARP-vragen en -antwoorden.
+
+6. prio 20480 · arp, in_port=eth3 → goto_table:1
+Hetzelfde voor a1_gst.
+
+7. prio 20480 · arp, in_port=eth4, dl_src=02:00:00:00:30:11 → goto_table:1
+ARP van a1_mgt mag alleen door als het bron-MAC klopt. Met een ander MAC valt het pakket in regel 3, en zonder ARP komt die host nergens.
+
+8. prio 20479 · ct_state=-trk, ip, in_port=eth2 → ct(table=0, zone=10, nat)
+De eerste ronde van elk IPv4-pakket van a1_emp. De switch weet nog niet of het nieuw of bestaand is, dus stuurt hij het door conntrack:
+
+zone=10 is de conntrack-tabel die alle poorten delen, zodat een antwoord op een andere poort dezelfde verbinding terugvindt;
+nat past een bestaande NAT-vertaling toe;
+table=0 stuurt het pakket daarna opnieuw door tabel 0, nu met een ct_state.
+9. prio 20479 · ct_state=-trk, ip, in_port=eth3 → ct(table=0, zone=10, nat)
+Hetzelfde voor guest.
+
+10. prio 20479 · ct_state=-trk, ip, in_port=eth4, dl_src=…30:11 → ct(...)
+Hetzelfde voor management, maar alleen met het juiste MAC-adres.
+
+11. prio 20478 · ct_state=+est+trk, ip, in_port=eth2 → goto_table:1
+Pakketten van een verbinding die al bestaat, mogen door. Dat is bijvoorbeeld het vervolg van een ping die al was toegestaan, of het antwoord van a1_emp op een ping van management.
+
+12. prio 20478 · ct_state=+est+trk, ip, in_port=eth3 → meter:1, goto_table:1
+Hetzelfde voor guest, maar eerst door meter 1: dat is guest-rate-limit, 1 Mbit/s. Dit is de rate limiting. Bijna al het verkeer van een verbinding is +est, dus bijna alles van de guest gaat door de meter.
+
+13. prio 20478 · ct_state=+est+trk, ip, in_port=eth4, dl_src=…30:11 → goto_table:1
+Bestaande verbindingen van management, alleen met het juiste MAC-adres.
+
+14. prio 20477 · ct_state=+rel+trk, ip, in_port=eth2 → goto_table:1
+Gerelateerd verkeer mag door: ICMP-foutmeldingen zoals "destination unreachable" of "TTL exceeded" die horen bij een verbinding die al bestaat.
+
+15. prio 20477 · ct_state=+rel+trk, ip, in_port=eth3 → meter:1, goto_table:1
+Hetzelfde voor guest, ook door de meter.
+
+16. prio 20477 · ct_state=+rel+trk, ip, in_port=eth4, dl_src=…30:11 → goto_table:1
+Hetzelfde voor management.
+
+17. prio 20476 · ct_state=+new+trk, ip, in_port=eth2, nw_dst=10.0.200.0/24 → drop
+Segmentatie: een employee mag geen nieuwe verbinding naar het guest-netwerk starten.
+
+18. prio 20475 · ct_state=+new+trk, ip, in_port=eth2, nw_dst=10.0.30.0/24 → drop
+Segmentatie: een employee mag geen nieuwe verbinding naar management starten.
+
+19. prio 20476 · ct_state=+new+trk, ip, in_port=eth3, nw_dst=10.0.200.1 → ct(commit, table=1, zone=10)
+Een guest mag zijn eigen gateway pingen. commit legt de verbinding vast in conntrack, zodat de volgende pakketten +est zijn. Daarna gaat het pakket naar tabel 1. Er is geen NAT, want het is intern verkeer.
+
+20. prio 20476 · ct_state=+new+trk, ip, in_port=eth4, dl_src=…30:11, nw_dst=10.0.200.0/24 → drop
+Segmentatie: management mag niet naar guest.
+
+21. prio 20475 · ct_state=+new+trk, ip, in_port=eth3, nw_dst=10.0.0.0/8 → drop
+Segmentatie: een guest mag niets interns bereiken, ook geen andere guests. Deze regel staat lager dan regel 19. Daardoor wordt eerst de uitzondering voor de gateway gecontroleerd, en pas daarna "verder niets intern".
+
+22. prio 20474 · ct_state=+new+trk, ip, in_port=eth2, nw_dst=10.0.0.0/8 → ct(commit, table=1, zone=10)
+Een employee mag de rest van het interne netwerk bereiken. Guest en management zijn in regel 17 en 18 al gedropt, dus in de praktijk zijn dit andere employees, ook in het andere gebouw. Dit is zonder NAT.
+
+23. prio 20475 · ct_state=+new+trk, ip, in_port=eth4, dl_src=…30:11, nw_dst=10.0.0.0/8 → ct(commit, table=1, zone=10)
+Management mag intern verbinden: naar employee en naar andere managementhosts. Guest is al gedropt in regel 20.
+
+24. prio 20474 · ct_state=+new+trk, ip, in_port=eth3 → ct(commit, table=1, zone=10, nat(src=198.51.100.9))
+Een nieuwe verbinding van een guest naar buiten, dus naar de ISP. Conntrack legt de verbinding vast en vertaalt het bronadres naar 198.51.100.9. Dat is de PAT: elke verbinding krijgt een eigen bronpoort op dat ene adres.
+
+25. prio 20473 · ct_state=+new+trk, ip, in_port=eth2 → ct(commit, ..., nat(src=198.51.100.9))
+Hetzelfde voor employee.
+
+26. prio 20474 · ct_state=+new+trk, ip, in_port=eth4, dl_src=…30:11 → ct(commit, ..., nat(src=198.51.100.9))
+Hetzelfde voor management, alleen met het juiste MAC-adres.
+
+27. prio 0 · (alles) → drop
+De vangnetregel van de hele tabel. Een pakket dat op geen enkele regel past, bijvoorbeeld van een poort die niet in de config staat, wordt gedropt. Standaard staat alles dus dicht.
+
+
+Het script maakt van één host 500 "gebruikers" door hem 500 extra IP-adressen te geven. Daarna laat het al die adressen tegelijk 20 seconden lang pingen, en telt het hoeveel gebruikers geen enkel pakket kwijtraakten. Hieronder het script stap voor stap.
+
+Stap 1: de instellingen
+
+COUNT=${1:-500}; IFACE=${2:-a1_emp-eth0}; TARGET=${3:-198.51.100.1}; DUR=${4:-20}
+De vier argumenten waarmee je het script start, met hun standaardwaarde:
+
+Variabele	Standaard	Betekenis
+COUNT	500	aantal gebruikers; 500 omdat de opdracht minimaal 500 eist
+IFACE	a1_emp-eth0	de netwerkkaart waarop de adressen komen
+TARGET	198.51.100.1	waar iedereen naartoe pingt: isp_a
+DUR	20	hoeveel seconden de test duurt
+Stap 2: 500 vrije adressen kiezen
+
+skip = {"10.0.100.1", "10.0.100.11", "10.0.100.12", "10.0.100.21", "10.0.100.22", "10.0.100.23"}
+ips = [str(h) for h in ipaddress.ip_network("10.0.100.0/23").hosts() if str(h) not in skip]
+print("\n".join(ips[:int(sys.argv[1])]))
+Een klein Python-stukje loopt alle adressen van het /23 af: 10.0.100.1 tot 10.0.101.254.
+Het slaat adressen over die al in gebruik zijn: de gateway .1 en de vijf echte employee-hosts. Een dubbel IP-adres zou het netwerk in de war brengen.
+Het neemt de eerste 500 vrije adressen en schrijft ze naar /tmp/scale/ips.txt.
+Stap 3: de adressen op de netwerkkaart zetten
+
+while read -r ip; do ip addr add "$ip/23" dev "$IFACE"; done < "$DIR/ips.txt"
+Elk adres komt erbij op a1_emp-eth0. Daarna heeft die ene netwerkkaart 501 IP-adressen. Elk adres gedraagt zich als een aparte gebruiker, maar ze delen allemaal het MAC-adres van a1_emp.
+
+Stap 4: alle 500 tegelijk laten pingen
+
+while read -r ip; do
+    ping -c "$DUR" -i 1 -q -I "$ip" "$TARGET" > "$DIR/ping_$ip.txt" 2>&1 &
+done < "$DIR/ips.txt"
+wait
+Dit is het stuk dat het "simultaan" maakt:
+
+-I "$ip" zorgt dat elke ping een ander bronadres gebruikt, dus voor het netwerk komt elke ping van een andere gebruiker.
+-c 20 -i 1 betekent 20 pings, één per seconde. Elke gebruiker is dus 20 seconden actief.
+& aan het eind zet elke ping op de achtergrond. Het script wacht er niet op en start meteen de volgende. Binnen een fractie van een seconde draaien er 500 pings tegelijk.
+wait wacht tot alle 500 klaar zijn.
+Elke ping schrijft zijn resultaat naar een eigen bestand, bijvoorbeeld ping_10.0.100.57.txt.
+Stap 5: het resultaat tellen
+
+OK=$(grep -l ' 0% packet loss' "$DIR"/ping_*.txt | wc -l)
+echo "Gebruikers met 0% verlies: $OK van $COUNT"
+grep -ho '[0-9.]*% packet loss' "$DIR"/ping_*.txt | sort | uniq -c
+De eerste regel telt hoeveel bestanden "0% packet loss" bevatten. Dat is het aantal gebruikers dat geen enkel pakket kwijtraakte.
+De tweede regel maakt een overzicht van hoeveel gebruikers welk verlies hadden, bijvoorbeeld 480 0% packet loss en 20 5% packet loss.
+Stap 6: opruimen
+
+while read -r ip; do ip addr del "$ip/23" dev "$IFACE"; done < "$DIR/ips.txt"
+De 500 extra adressen gaan er weer af, en a1_emp is daarna weer gewoon zichzelf.
+
+Wat er ondertussen in het netwerk gebeurt
+Bij het eerste pakket van elke gebruiker:
+
+ACL op a_f1: het pakket is +new, dus het raakt de NAT-regel. Er komt een nieuwe regel in conntrack, en het bronadres wordt 198.51.100.9 met een eigen poort. Na een paar seconden zijn er 500 verbindingen op hetzelfde publieke adres.
+isp_a antwoordt aan 198.51.100.9. Op a_core zet conntrack het doeladres terug naar het juiste privé-adres.
+Faucet moet weten waar dat privé-adres zit. Het doet ARP, a1_emp antwoordt, en Faucet zet een host-route neer. Na de test staan er 500 routes in tabel 3.
+Het kan goed zijn dat sommige gebruikers hun eerste ping kwijtraken (5% verlies = 1 van de 20). Dat komt doordat Faucet dat adres nog moest leren. Zolang de rest goed gaat, is dat normaal opstartgedrag en geen probleem.
+
+Hoe je het draait
+In de Mininet-CLI:
+
+
+a1_emp bash /home/mininet/sdn-opdracht2/tests/scale_test.sh

@@ -46,3 +46,4 @@ pingall	Test de verbinding tussen alle hosts.
 h1 ping h2	Test de verbinding tussen h1 en h2.
 iperf h1 h2	Meet de netwerkdoorvoer tussen h1 en h2.
 exit	Sluit de Mininet CLI af.
+

@@ -5,7 +5,7 @@ Datum: 9 november 2026 · Getest op de echte VM's: Faucet-VM `10.24.20.8` (Fauce
 ## 1. Samenvatting
 
 | | |
-|---|---|
+|---|---|curl -s localhost:9302 | grep 'table_names{.*dp_name="a_f1"' | sed -E 's/.*next_tables="([^"]*)",table_name="([^"]*)"} ([0-9]+).*/\3  \2  -> \1/' | sort -n
 | **Resultaat** | **54 van de 54 tests geslaagd**, in 4 volledige runs na elkaar (run 7 t/m 10) |
 | Wijziging | **Firewall én NAT zitten nu in Faucet `ct`**, zoals je docent vroeg ("FW & NAT -> Faucet CT"). `isp_a` en `isp_b` zijn gewone routers zonder NAT. |
 | Topologie | [IPV4_Topo_opdracht2.py](IPV4_Topo_opdracht2.py) |

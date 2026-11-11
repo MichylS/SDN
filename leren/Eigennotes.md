@@ -302,3 +302,65 @@ Het zit in dezelfde ACL als de firewall. Port security en de stateful firewall s
 Beperking om te kennen
 Een MAC-adres is niet geheim. Iemand die het MAC-adres van de management-pc weet, kan zijn eigen laptop dat adres geven (MAC-spoofing) en komt dan wel binnen. Port security op MAC-adres is dus een basismaatregel. In een echt bedrijfsnetwerk zou je daarnaast 802.1X gebruiken: inloggen met certificaat of wachtwoord voordat de poort opengaat.
 
+'De vier toestanden
+Conntrack plakt een label op elk pakket:
+
+Label	Betekenis
+-trk	nog niet langs conntrack geweest, dus de toestand is onbekend
++trk+new	gevolgd, en dit is het begin van een nieuw gesprek
++trk+est	gevolgd, en dit hoort bij een gesprek dat al bestaat
++trk+rel	gevolgd, en dit is een foutmelding (ICMP) over een bestaand gesprek
+
+
+ping all data met uitleg:
+![alt text](image.png)
+Met pingall is het hele beleid in één keer getest. Employees bereiken elkaar en de ISP, maar geen guest of management. Guests bereiken alleen de ISP, ook geen andere guests. Management bereikt employees en andere managementhosts, maar geen guests. Vanaf de ISP-routers is niets binnen bereikbaar. Bij de eerste pingall vielen enkele pings van management naar employee weg. pingall stuurt per paar maar één ping, en het eerste pakket naar een host die Faucet nog niet kent, gaat verloren terwijl Faucet die host opzoekt. Bij een tweede pingall klopt het resultaat precies met het beleid.
+
+
+13. De belangrijkste begrippen die je moet kennen
+Dit is de samenvatting die ik zou leren voordat je aan stap 2 begint.
+Begrip	Wat betekent het?
+IPv4	Oudere versie van IP-adressering
+IPv6	Nieuwere versie van IP-adressering
+Dual-stack	IPv4 en IPv6 tegelijkertijd gebruiken
+Prefix /64	Geeft aan welk IPv6-netwerk een adres gebruikt
+Prefix /48	Groter netwerk waaruit meerdere /64-netwerken worden gemaakt
+VLAN	Logische scheiding van een netwerk
+Gateway	Router waar verkeer naartoe gaat voor andere netwerken
+Faucet VIP	Het gatewayadres dat Faucet voor een VLAN gebruikt
+Routering	Pakketten tussen verschillende netwerken doorsturen
+NAT	IP-adressen aanpassen
+SLAAC	Automatisch een IPv6-adres configureren
+RA	Router Advertisement, informatie van een router voor IPv6-hosts
+ICMPv6	Protocol voor IPv6-controle en netwerkfunctionaliteit
+Neighbor Discovery	IPv6-mechanisme om andere apparaten op het lokale netwerk te vinden
+ACL	Regels die bepalen welk netwerkverkeer toegestaan wordt
+Stateful firewall	Firewall die bijhoudt welke verbindingen bestaan
+MAC-adres	Identificatie van een netwerkinterface op Ethernetniveau
+
+14. Wat moet je vooral onthouden voor jouw opdracht?
+Ik zou de opdracht in deze volgorde begrijpen:
+1. Stap 1 — IPv6-adressering
+   
+   Elk VLAN krijgt een eigen IPv6-subnet. Elke host krijgt een vast IPv6-adres.
+2. Stap 2 — IPv6-gateway
+   
+   Faucet krijgt een IPv6-VIP per VLAN. Hosts gebruiken dit adres als gateway.
+3. Stap 3 — IPv6-routering
+   
+   Faucet kan verkeer tussen de verschillende VLAN's doorsturen.
+4. Stap 4 — ISP-routering
+   
+   De ISP-routers krijgen een route naar het volledige klantprefix /48. Hiervoor is geen NAT nodig.
+5. Stap 5 — IPv6-firewall
+   
+   In stap 1 staat IPv6 tijdelijk open. In stap 2 ga je stateful IPv6-firewallregels toevoegen.
+
+Nog drie technische aandachtspunten bij jouw code:
+1. nodad betekent dat Duplicate Address Detection wordt overgeslagen. Dat is een keuze voor deze simulatie, maar normaal controleert IPv6 eerst of een adres al in gebruik is.
+2. ICMPv6 moet goed worden behandeld. Vooral Neighbor Discovery is noodzakelijk voor communicatie op een lokaal IPv6-netwerk.
+3. Het adres 2001:db8:a::/48 is een documentatieprefix. Het is geschikt voor jouw lab, maar niet voor echte internetcommunicatie.
+
+![alt text](image-1.png)
+
+Na het routeren zit het pakket in het VLAN van de bestemming. De switches daarna routeren niet meer: ze sturen het over de stack door als gewoon verkeer binnen dat VLAN. De gateway is dus geen apart apparaat, maar een rol die elke switch speelt. Alle switches gebruiken hetzelfde gateway-adres (bijvoorbeeld 10.0.100.1) en hetzelfde MAC-adres (0e:00:00:00:00:01), en de switch waar een host op aangesloten zit, routeert het verkeer van die host. Dit principe heet een distributed anycast gateway.

@@ -1,0 +1,462 @@
+---
+# Faucet-configuratie voor de dual-stack topologie van opdracht 3 (IPV6_Topo_opdracht3_fw.py).
+#
+# STAP 2: stateful firewall voor IPv4 EN IPv6, plus strikte gastisolatie.
+#   - Alleen verbindingen die binnen zijn gestart krijgen antwoordverkeer
+#     (conntrack: +new wordt vastgelegd, +est/+rel mag terug).
+#   - Nieuwe verbindingen van buiten (ISP-poorten) worden geblokkeerd.
+#   - Gasten mogen alleen naar de ISP en hun eigen gateway, niet onderling:
+#     ook ARP/ND alleen richting de gateway, en geen link-local of multicast.
+#   - IPv4 gebruikt PAT naar 198.51.100.9; IPv6 heeft geen NAT nodig.
+#   - Hosts mogen geen router advertisements sturen (RA-guard): alleen
+#     ICMPv6-type 133/135/136 wordt vóór de firewall doorgelaten.
+#
+# IPv6-adresplan (klantprefix 2001:db8:a::/48, 4e groep = VLAN-nummer):
+#   VLAN 100 employee    2001:db8:a:100::/64   gateway ::1
+#   VLAN 200 guest       2001:db8:a:200::/64   gateway ::1
+#   VLAN 300 management  2001:db8:a:300::/64   gateway ::1
+#   VLAN 500 ISP         2001:db8:a:500::/64   isp_a ::1, Faucet ::2, isp_b ::3
+# De ISP-routers routeren 2001:db8:a::/48 naar Faucet (::2): geen NAT bij IPv6.
+# Elk VLAN heeft ook de link-local gateway fe80::1/64. Faucet beantwoordt
+# neighbor solicitations alleen als de afzender in een VIP-subnet ligt, en
+# Linux controleert zijn buren met zijn link-local adres (fe80::) als bron.
+# Zonder fe80::1 raakt de gateway na ~30 s 'FAILED' in de neighbor-cache.
+#
+# Faucet doet hier:
+#   - VLAN-scheiding (employee 100, guest 200, management 300, ISP 500)
+#   - routering tussen de VLAN's voor IPv4 en IPv6
+#     (faucet_vips = gateway .1 en ::1 per VLAN)
+#   - stacking tussen alle switches (Faucet kent de hele topologie)
+#   - een stateful firewall met connection tracking (ct-ACL's)
+#   - NAT (ct nat): verkeer naar internet krijgt bronadres 198.51.100.9
+#   - port security op managementpoorten en 1 Mbit/s voor guests
+# De ISP-routers isp_a en isp_b sturen alleen door; zij doen geen NAT.
+#
+# ct_state-waarden (OVS conntrack):
+#   0/0x20     = nog niet gevolgd (-trk)
+#   0x21/0x21  = gevolgd en nieuwe verbinding (+trk+new)
+#   0x22/0x22  = gevolgd en bestaande verbinding (+trk+est)
+#   0x24/0x24  = gevolgd en gerelateerd, bv. ICMP-fout (+trk+rel)
+# ct-actie:
+#   table: 0, nat: {}  = door conntrack en opnieuw door de poort-ACL (tabel 0);
+#                        nat: {} past een bestaande NAT-vertaling toe (heen en terug)
+#   table: 1, flags: 1 = verbinding vastleggen (commit) en verder door de Faucet-pipeline
+#   nat: {flags: 1, range_ipv4_min/max: 198.51.100.9}
+#                      = bij het vastleggen het bronadres omzetten (SNAT) naar 198.51.100.9
+#
+# Publiek blok 198.51.100.0/28, in twee helften:
+#   198.51.100.0/29 = ISP-segment (VLAN 500): isp_a .1, Faucet .2, isp_b .3
+#   198.51.100.8/29 = NAT-blok; de ISP-routers routeren dit naar Faucet (.2).
+# Het NAT-adres ligt bewust buiten het VIP-subnet: Faucet leert elk bron-IP
+# binnen een VIP-subnet als host. NAT naar .2 (de VIP zelf) liet Faucet zijn
+# eigen adres als host leren, waarna ping naar .2 niet meer werkte.
+
+meters:
+    # Guest-verkeer wordt per poort beperkt tot 1 Mbit/s.
+    guest-rate-limit:
+        meter_id: 1
+        entry:
+            flags: [KBPS, BURST, STATS]
+            bands:
+                - type: DROP
+                  rate: 1000
+                  burst_size: 100
+
+acls:
+    # ==================================================================
+    # Employee-poorten: eigen VLAN en naar buiten. Geen nieuwe verbindingen
+    # naar guest of management (antwoorden daarop mogen wel terug).
+    # ==================================================================
+    office-fw:
+        # --- Altijd nodig: ARP en IPv6 neighbor discovery (geen RA: RA-guard) ---
+        - rule: {description: "ARP toestaan", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 router solicitation", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 neighbor solicitation", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 neighbor advertisement", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        # --- IPv4, stateful (zoals opdracht 2) ---
+        - rule: {description: "IPv4 nog niet gevolgd -> door conntrack", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaande verbinding", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd verkeer", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw naar management verboden", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.30.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern: vastleggen, zonder NAT", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten: vastleggen + PAT naar 198.51.100.9", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        # --- IPv6, stateful (geen NAT) ---
+        - rule: {description: "IPv6 nog niet gevolgd -> door conntrack", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaande verbinding", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd verkeer", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar management verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:300::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar eigen VLAN of buiten: vastleggen", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Al het andere droppen", actions: {allow: 0}}
+
+    # ==================================================================
+    # Guest-poorten: alleen naar de ISP (buiten) en de eigen gateway.
+    # Gasten kunnen elkaar op geen enkele manier bereiken:
+    #   - ARP alleen als het om de gateway 10.0.200.1 gaat
+    #   - ND alleen richting de gateway (2001:db8:a:200::1 / fe80::1)
+    #   - geen nieuw verkeer naar interne subnetten, link-local of multicast
+    # Bestaand verkeer gaat door meter guest-rate-limit (1 Mbit/s).
+    # ==================================================================
+    guest-fw:
+        # --- ARP en neighbor discovery, alleen richting de gateway ---
+        - rule: {description: "ARP alleen over/naar de gateway 10.0.200.1", eth_type: 0x0806, arp_tpa: 10.0.200.1, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 router solicitation", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "NS: alleen de gateway opzoeken", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, ipv6_nd_target: "2001:db8:a:200::1", actions: {allow: 1}}
+        - rule: {description: "NS: alleen de link-local gateway opzoeken", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, ipv6_nd_target: "fe80::1", actions: {allow: 1}}
+        - rule: {description: "NA: alleen antwoorden aan de gateway", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, ipv6_dst: "2001:db8:a:200::1", actions: {allow: 1}}
+        - rule: {description: "NA: alleen antwoorden aan de link-local gateway", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, ipv6_dst: "fe80::1", actions: {allow: 1}}
+        # --- IPv4, stateful (zoals opdracht 2) ---
+        - rule: {description: "IPv4 nog niet gevolgd -> door conntrack", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaande verbinding, met 1 Mbit/s-limiet", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1, meter: guest-rate-limit}}
+        - rule: {description: "IPv4 gerelateerd verkeer, met limiet", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1, meter: guest-rate-limit}}
+        - rule: {description: "IPv4 nieuw naar eigen gateway", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.1/32, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar intern verboden (ook andere guests)", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw naar buiten: vastleggen + PAT", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        # --- IPv6, stateful ---
+        - rule: {description: "IPv6 nog niet gevolgd -> door conntrack", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaande verbinding, met 1 Mbit/s-limiet", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1, meter: guest-rate-limit}}
+        - rule: {description: "IPv6 gerelateerd verkeer, met limiet", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1, meter: guest-rate-limit}}
+        - rule: {description: "IPv6 nieuw naar eigen gateway", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::1", actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv6 nieuw naar employee verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:100::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar andere guests verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar management verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:300::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar link-local (andere guests direct) verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "fe80::/10", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar multicast (alle guests tegelijk) verboden", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "ff00::/8", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw naar buiten (ISP): vastleggen", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Al het andere droppen", actions: {allow: 0}}
+
+    # ==================================================================
+    # Management-poorten: port security (alleen het vaste MAC-adres) en een
+    # stateful firewall. Mag naar employee, management en buiten, niet naar
+    # guest. Elke regel die iets doorlaat matcht op het vaste bron-MAC.
+    # ==================================================================
+    mgt-fw-a1:
+        - rule: {description: "ARP", eth_src: "02:00:00:00:30:11", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 RS", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NS", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NA", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        - rule: {description: "IPv4 nog niet gevolgd", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaand", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten + PAT", eth_src: "02:00:00:00:30:11", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "IPv6 nog niet gevolgd", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaand", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw intern of naar buiten", eth_src: "02:00:00:00:30:11", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-a2:
+        - rule: {description: "ARP", eth_src: "02:00:00:00:30:12", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 RS", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NS", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NA", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        - rule: {description: "IPv4 nog niet gevolgd", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaand", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten + PAT", eth_src: "02:00:00:00:30:12", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "IPv6 nog niet gevolgd", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaand", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw intern of naar buiten", eth_src: "02:00:00:00:30:12", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b1:
+        - rule: {description: "ARP", eth_src: "02:00:00:00:30:21", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 RS", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NS", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NA", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        - rule: {description: "IPv4 nog niet gevolgd", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaand", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten + PAT", eth_src: "02:00:00:00:30:21", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "IPv6 nog niet gevolgd", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaand", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw intern of naar buiten", eth_src: "02:00:00:00:30:21", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b2:
+        - rule: {description: "ARP", eth_src: "02:00:00:00:30:22", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 RS", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NS", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NA", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        - rule: {description: "IPv4 nog niet gevolgd", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaand", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten + PAT", eth_src: "02:00:00:00:30:22", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "IPv6 nog niet gevolgd", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaand", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw intern of naar buiten", eth_src: "02:00:00:00:30:22", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+    mgt-fw-b3:
+        - rule: {description: "ARP", eth_src: "02:00:00:00:30:23", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 RS", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 133, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NS", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 NA", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        - rule: {description: "IPv4 nog niet gevolgd", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 bestaand", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw naar guest verboden", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.200.0/24, actions: {allow: 0}}
+        - rule: {description: "IPv4 nieuw intern", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21, ipv4_dst: 10.0.0.0/8, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "IPv4 nieuw naar buiten + PAT", eth_src: "02:00:00:00:30:23", eth_type: 0x0800, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1, nat: {flags: 1, range_ipv4_min: 198.51.100.9, range_ipv4_max: 198.51.100.9}}}}
+        - rule: {description: "IPv6 nog niet gevolgd", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 bestaand", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw naar guest verboden", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ct_state: 0x21/0x21, ipv6_dst: "2001:db8:a:200::/64", actions: {allow: 0}}
+        - rule: {description: "IPv6 nieuw intern of naar buiten", eth_src: "02:00:00:00:30:23", eth_type: 0x86DD, ct_state: 0x21/0x21, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Ander MAC-adres of ander verkeer: droppen", actions: {allow: 0}}
+
+    # ==================================================================
+    # ISP-poorten (a_core p4, b_core p5): alleen antwoorden op verbindingen
+    # die van binnen zijn gestart. IPv4: ct nat zet 198.51.100.9 terug naar het
+    # privé-adres. IPv6: geen NAT, maar wel dezelfde stateful regel: het
+    # klantprefix is vanaf de ISP routeerbaar, dus alleen conntrack houdt
+    # ongevraagd verkeer tegen. Uitzondering: ping vanuit het ISP-segment
+    # naar Faucet zelf (198.51.100.2 / 2001:db8:a:500::2).
+    # ==================================================================
+    isp-uplink:
+        # --- ARP en neighbor discovery in het ISP-segment ---
+        - rule: {description: "ARP toestaan", eth_type: 0x0806, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 neighbor solicitation", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 135, actions: {allow: 1}}
+        - rule: {description: "ICMPv6 neighbor advertisement", eth_type: 0x86DD, ip_proto: 58, icmpv6_type: 136, actions: {allow: 1}}
+        # --- IPv4 ---
+        - rule: {description: "IPv4 nog niet gevolgd -> door conntrack (+ NAT terugdraaien)", eth_type: 0x0800, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0, nat: {}}}}
+        - rule: {description: "IPv4 antwoord op verbinding van binnen", eth_type: 0x0800, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv4 gerelateerd verkeer", eth_type: 0x0800, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv4 nieuw: alleen ping uit het ISP-segment naar Faucet .2", eth_type: 0x0800, ct_state: 0x21/0x21, ip_proto: 1, ipv4_src: 198.51.100.0/29, ipv4_dst: 198.51.100.2/32, actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        # --- IPv6 ---
+        - rule: {description: "IPv6 nog niet gevolgd -> door conntrack", eth_type: 0x86DD, ct_state: 0/0x20, actions: {ct: {zone: 10, table: 0}}}
+        - rule: {description: "IPv6 antwoord op verbinding van binnen", eth_type: 0x86DD, ct_state: 0x22/0x22, actions: {allow: 1}}
+        - rule: {description: "IPv6 gerelateerd verkeer", eth_type: 0x86DD, ct_state: 0x24/0x24, actions: {allow: 1}}
+        - rule: {description: "IPv6 nieuw: alleen ping uit het ISP-segment naar Faucet ::2", eth_type: 0x86DD, ct_state: 0x21/0x21, ip_proto: 58, icmpv6_type: 128, ipv6_src: "2001:db8:a:500::/64", ipv6_dst: "2001:db8:a:500::2", actions: {ct: {zone: 10, flags: 1, table: 1}}}
+        - rule: {description: "Nieuw van buiten en al het andere: droppen", actions: {allow: 0}}
+
+    # ------------------------------------------------------------------
+    # Alle stackpoorten, alleen voor IPv6.
+    # Faucet maakt zelf IPv6-pakketten met een gateway-adres als bron:
+    # neighbor solicitations (NS) en antwoorden (NA). In een stack gaan die
+    # ook over de stackpoorten naar andere switches. Daar is het MAC van Faucet
+    # geen bekende bron, dus gaat het pakket naar de controller, en Faucet
+    # leert dan zijn EIGEN gateway-adres als host (route naar 0e:00:00:00:00:01).
+    # Daarna komen antwoorden en pings aan de gateway nooit meer bij Faucet aan.
+    # Bij IPv4 speelt dit niet: ARP is geen IP-pakket.
+    # Deze ACL houdt alleen pakketten tegen die van Faucet zelf komen EN een
+    # gateway-adres als bron hebben. Gerouteerd verkeer (bron = host) mag door.
+    # Gevolg: een switch kan een buur op een andere switch niet zelf opzoeken;
+    # hij leert hem wanneer de switch van die buur hem opzoekt (Faucet verspreidt
+    # dat antwoord over de stack). Daarom staat nd_neighbor_timeout op 5 s.
+    # ------------------------------------------------------------------
+    stack-faucet-v6:
+        - rule: {description: "Faucet-pakket van gateway VLAN 100", eth_type: 0x86DD,
+                 eth_src: "0e:00:00:00:00:01", ipv6_src: "2001:db8:a:100::1", actions: {allow: 0}}
+        - rule: {description: "Faucet-pakket van gateway VLAN 200", eth_type: 0x86DD,
+                 eth_src: "0e:00:00:00:00:01", ipv6_src: "2001:db8:a:200::1", actions: {allow: 0}}
+        - rule: {description: "Faucet-pakket van gateway VLAN 300", eth_type: 0x86DD,
+                 eth_src: "0e:00:00:00:00:01", ipv6_src: "2001:db8:a:300::1", actions: {allow: 0}}
+        - rule: {description: "Faucet-pakket van gateway ISP-segment", eth_type: 0x86DD,
+                 eth_src: "0e:00:00:00:00:01", ipv6_src: "2001:db8:a:500::2", actions: {allow: 0}}
+        - rule: {description: "Faucet-pakket van link-local gateway", eth_type: 0x86DD,
+                 eth_src: "0e:00:00:00:00:01", ipv6_src: "fe80::1", actions: {allow: 0}}
+        - rule: {description: "Al het andere stackverkeer doorlaten", actions: {allow: 1}}
+
+vlans:
+    office:
+        vid: 100
+        description: "Employee 10.0.100.0/23, 2001:db8:a:100::/64"
+        faucet_vips: ["10.0.100.1/23", "2001:db8:a:100::1/64", "fe80::1/64"]
+    guest:
+        vid: 200
+        description: "Guest 10.0.200.0/24, 2001:db8:a:200::/64"
+        faucet_vips: ["10.0.200.1/24", "2001:db8:a:200::1/64", "fe80::1/64"]
+    management:
+        vid: 300
+        description: "Management 10.0.30.0/24, 2001:db8:a:300::/64"
+        faucet_vips: ["10.0.30.1/24", "2001:db8:a:300::1/64", "fe80::1/64"]
+    isp:
+        vid: 500
+        description: "ISP-segment 198.51.100.0/29 + 2001:db8:a:500::/64 (isp_a 1, Faucet 2, isp_b 3)"
+        faucet_vips: ["198.51.100.2/29", "2001:db8:a:500::2/64", "fe80::1/64"]
+        routes:
+            - route:
+                  ip_dst: "0.0.0.0/0"
+                  ip_gw: "198.51.100.1"
+            - route:
+                  ip_dst: "::/0"
+                  ip_gw: "2001:db8:a:500::1"
+
+routers:
+    # Routering tussen alle VLAN's, voor IPv4 en IPv6; de ACL's bepalen wat mag.
+    intern:
+        vlans: [office, guest, management, isp]
+
+dps:
+    a_core:
+        dp_id: 0x1
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        stack:
+            priority: 1     # stack-root
+        interfaces:
+            1:
+                description: "Stack naar a_f1"
+                stack: {dp: a_f1, port: 1}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Stack naar a_f2"
+                stack: {dp: a_f2, port: 1}
+                acls_in: [stack-faucet-v6]
+            3:
+                description: "Darkfiber naar b_core"
+                stack: {dp: b_core, port: 4}
+                acls_in: [stack-faucet-v6]
+            4:
+                description: "ISP-router A (isp_a)"
+                native_vlan: isp
+                acls_in: [isp-uplink]
+
+    a_f1:
+        dp_id: 0x2
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar a_core"
+                stack: {dp: a_core, port: 1}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Employee a1_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest a1_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management a1_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-a1]
+
+    a_f2:
+        dp_id: 0x3
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar a_core"
+                stack: {dp: a_core, port: 2}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Employee a2_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest a2_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management a2_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-a2]
+
+    b_core:
+        dp_id: 0x4
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar b_f1"
+                stack: {dp: b_f1, port: 1}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Stack naar b_f2"
+                stack: {dp: b_f2, port: 1}
+                acls_in: [stack-faucet-v6]
+            3:
+                description: "Stack naar b_f3"
+                stack: {dp: b_f3, port: 1}
+                acls_in: [stack-faucet-v6]
+            4:
+                description: "Darkfiber naar a_core"
+                stack: {dp: a_core, port: 3}
+                acls_in: [stack-faucet-v6]
+            5:
+                description: "ISP-router B (isp_b)"
+                native_vlan: isp
+                acls_in: [isp-uplink]
+
+    b_f1:
+        dp_id: 0x5
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 1}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Employee b1_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b1_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b1_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b1]
+
+    b_f2:
+        dp_id: 0x6
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 2}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Employee b2_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b2_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b2_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b2]
+
+    b_f3:
+        dp_id: 0x7
+        hardware: "Open vSwitch"
+        nd_neighbor_timeout: 5   # IPv6-buren elke 5 s opnieuw opzoeken (standaard 30), zie stack-faucet-v6
+        interfaces:
+            1:
+                description: "Stack naar b_core"
+                stack: {dp: b_core, port: 3}
+                acls_in: [stack-faucet-v6]
+            2:
+                description: "Employee b3_emp"
+                native_vlan: office
+                acls_in: [office-fw]
+            3:
+                description: "Guest b3_gst"
+                native_vlan: guest
+                acls_in: [guest-fw]
+            4:
+                description: "Management b3_mgt"
+                native_vlan: management
+                acls_in: [mgt-fw-b3]
